@@ -71,7 +71,7 @@ Fluxo principal de troca de perfil:
 - Nao mova `Profiles/` para `data/users/default_user/profiles` automaticamente sem pedido explicito; o fallback atual preserva os perfis existentes.
 - O app manipula pastas de save reais do usuario. Prefira testar com diretorios temporarios.
 - `core.validators.ensure_safe_save_directory` impede que uma pasta de save aponte para arquivos internos do app.
-- Existem textos com mojibake, por exemplo `configuraÃ§Ã£o`; provavelmente arquivos foram salvos/lidos com codificacao errada em algum momento. Ao editar UI, corrija texto visivel com cuidado e salve como UTF-8.
+- Historicamente alguns textos visiveis tiveram mojibake. Ao editar UI, corrija texto quebrado com cuidado e salve como UTF-8.
 - `tkinterdnd2` e opcional: se falhar, `app_ui.dnd_support.enable_tkdnd` retorna `None` e a UI desativa drag and drop.
 - Drag and drop no Windows depende do processo estar no mesmo nivel de privilegio do Explorer. Se o app rodar como administrador e o Explorer nao, o cursor pode mostrar bloqueio mesmo com `tkinterdnd2` correto.
 - A janela `Gerenciar jogos` e sensivel a foco/DnD. Evite `grab_set`, `WindowStaysOnTopHint`, `-topmost`, overlay/modal global ou `focus_force()` nela. A janela deve abrir como `CTkToplevel` normal, nascer oculta, estabilizar layout/DnD e so entao aparecer.

@@ -24,7 +24,7 @@ from app_ui.theme import (
     TEXT_SECONDARY,
 )
 from core.path_resolver import resolver_caminho
-from core.validators import collect_save_path_errors
+from core.validators import validate_save_path
 
 _IMAGE_CACHE = {}
 
@@ -268,9 +268,18 @@ class GameLibraryCard(ctk.CTkFrame):
 
 
 class PathListEditor(ctk.CTkFrame):
-    def __init__(self, master, dnd_context=None, textbox_height=180):
+    def __init__(
+        self,
+        master,
+        dnd_context=None,
+        textbox_height=180,
+        dialog_parent=None,
+        on_validation_change=None,
+    ):
         super().__init__(master, fg_color="transparent")
         self.dnd_context = dnd_context
+        self.dialog_parent = dialog_parent
+        self.on_validation_change = on_validation_change
         self._validation_after = None
         self._compact_toolbar = False
         self.bind("<Configure>", self._on_resize)
@@ -284,24 +293,12 @@ class PathListEditor(ctk.CTkFrame):
             text_color=TEXT_PRIMARY,
             anchor="w",
         )
-        self.label.grid(row=0, column=0, sticky="ew", pady=(0, 6))
-
-        self.helper = ctk.CTkLabel(
-            self,
-            text="Adicione pastas de save. Dê duplo clique em uma pasta para abrir no Explorer.",
-            font=("Segoe UI", 12),
-            text_color=TEXT_SECONDARY,
-            anchor="w",
-            justify="left",
-            wraplength=420,
-        )
-        self.helper.grid(row=1, column=0, sticky="ew", pady=(0, 8))
+        self.label.grid(row=0, column=0, sticky="ew", pady=(0, 5))
 
         self.toolbar = ctk.CTkFrame(self, fg_color="transparent")
-        self.toolbar.grid(row=2, column=0, sticky="ew", pady=(0, 8))
+        self.toolbar.grid(row=1, column=0, sticky="ew", pady=(0, 6))
         self.toolbar.grid_columnconfigure(0, weight=1)
         self.toolbar.grid_columnconfigure(1, weight=1)
-        self.toolbar.grid_columnconfigure(2, weight=1)
 
         self.add_button = ctk.CTkButton(
             self.toolbar,
@@ -324,28 +321,17 @@ class PathListEditor(ctk.CTkFrame):
             border_color=BORDER_COLOR,
             height=36,
         )
-        self.open_button.grid(row=0, column=1, padx=8, sticky="ew")
-
-        self.validate_button = ctk.CTkButton(
-            self.toolbar,
-            text="Validar caminhos",
-            command=lambda: self.validate(show_error=True),
-            fg_color=SURFACE_TERTIARY,
-            hover_color=SURFACE_SECONDARY,
-            text_color=TEXT_PRIMARY,
-            height=36,
-        )
-        self.validate_button.grid(row=0, column=2, padx=(8, 0), sticky="ew")
+        self.open_button.grid(row=0, column=1, padx=(8, 0), sticky="ew")
 
         self.drop_zone = tk.Frame(
             self,
-            height=42,
+            height=34,
             bg=_theme_color(SURFACE_TERTIARY),
             highlightthickness=1,
             highlightbackground=_theme_color(BORDER_COLOR),
             highlightcolor=_theme_color(ACCENT_COLOR),
         )
-        self.drop_zone.grid(row=3, column=0, sticky="ew", pady=(0, 8))
+        self.drop_zone.grid(row=2, column=0, sticky="ew", pady=(0, 6))
         self.drop_zone.grid_propagate(False)
         self.drop_zone.grid_columnconfigure(0, weight=1)
 
@@ -357,7 +343,7 @@ class PathListEditor(ctk.CTkFrame):
             font=("Segoe UI", 12, "bold"),
             anchor="center",
         )
-        self.drop_zone_label.grid(row=0, column=0, sticky="nsew", padx=12, pady=8)
+        self.drop_zone_label.grid(row=0, column=0, sticky="nsew", padx=12, pady=5)
 
         self.textbox = ctk.CTkTextbox(
             self,
@@ -369,10 +355,11 @@ class PathListEditor(ctk.CTkFrame):
             text_color=TEXT_PRIMARY,
             font=("Consolas", 12),
         )
-        self.textbox.grid(row=4, column=0, sticky="nsew")
+        self.textbox.grid(row=3, column=0, sticky="nsew")
         self.textbox.bind("<KeyRelease>", self._schedule_validation)
         self.textbox.bind("<Double-Button-1>", self._open_path_from_click)
-        self.grid_rowconfigure(4, weight=1)
+        self._configure_path_tags()
+        self.grid_rowconfigure(3, weight=1)
 
         drop_targets = (
             self.drop_zone,
@@ -398,7 +385,8 @@ class PathListEditor(ctk.CTkFrame):
             justify="left",
             wraplength=420,
         )
-        self.feedback_label.grid(row=5, column=0, sticky="ew", pady=(6, 0))
+        self.feedback_label.grid(row=4, column=0, sticky="ew", pady=(5, 0))
+        self.feedback_label.grid_remove()
 
     def refresh_drop_targets(self):
         drop_targets = (
@@ -420,7 +408,6 @@ class PathListEditor(ctk.CTkFrame):
             return
 
         wraplength = max(260, width - 16)
-        self.helper.configure(wraplength=wraplength)
         self.feedback_label.configure(wraplength=wraplength)
 
         compact = width < 850
@@ -431,30 +418,120 @@ class PathListEditor(ctk.CTkFrame):
         if compact:
             self.toolbar.grid_columnconfigure(0, weight=1)
             self.toolbar.grid_columnconfigure(1, weight=1)
-            self.toolbar.grid_columnconfigure(2, weight=0)
-            self.add_button.grid_configure(row=0, column=0, columnspan=2, padx=0, pady=(0, 8), sticky="ew")
-            self.open_button.grid_configure(row=1, column=0, padx=(0, 6), pady=0, sticky="ew")
-            self.validate_button.grid_configure(row=1, column=1, padx=(6, 0), pady=0, sticky="ew")
+            self.add_button.grid_configure(row=0, column=0, padx=(0, 6), pady=0, sticky="ew")
+            self.open_button.grid_configure(row=0, column=1, padx=(6, 0), pady=0, sticky="ew")
         else:
             self.toolbar.grid_columnconfigure(0, weight=1)
             self.toolbar.grid_columnconfigure(1, weight=1)
-            self.toolbar.grid_columnconfigure(2, weight=1)
-            self.add_button.grid_configure(row=0, column=0, columnspan=1, padx=(0, 8), pady=0, sticky="ew")
-            self.open_button.grid_configure(row=0, column=1, padx=8, pady=0, sticky="ew")
-            self.validate_button.grid_configure(row=0, column=2, padx=(8, 0), pady=0, sticky="ew")
+            self.add_button.grid_configure(row=0, column=0, padx=(0, 8), pady=0, sticky="ew")
+            self.open_button.grid_configure(row=0, column=1, padx=(8, 0), pady=0, sticky="ew")
 
     def _schedule_validation(self, _event=None):
         if self._validation_after:
             self.after_cancel(self._validation_after)
         self._validation_after = self.after(250, lambda: self.validate(show_error=True))
 
+    def _configure_path_tags(self):
+        try:
+            self.textbox.tag_config("invalid_path", foreground=_theme_color(ERROR_COLOR))
+        except Exception:
+            pass
+
+    def _set_feedback(self, message="", color=None):
+        if not message:
+            self.feedback_label.configure(text="")
+            self.feedback_label.grid_remove()
+            return
+
+        self.feedback_label.grid()
+        self.feedback_label.configure(text=message, text_color=color or TEXT_SECONDARY)
+
+    def _clear_path_highlights(self):
+        try:
+            self.textbox.tag_remove("invalid_path", "1.0", "end")
+        except Exception:
+            pass
+
+    def _highlight_invalid_lines(self, line_numbers):
+        self._clear_path_highlights()
+        for line_number in line_numbers:
+            try:
+                self.textbox.tag_add("invalid_path", f"{line_number}.0", f"{line_number}.end")
+            except Exception:
+                pass
+
+    def _refresh_path_highlights(self):
+        invalid_lines, _valid_paths = self._find_invalid_path_lines()
+        if invalid_lines:
+            self._highlight_invalid_lines(invalid_lines)
+            self.textbox.configure(border_color=ERROR_COLOR)
+            return False
+
+        self._clear_path_highlights()
+        self.textbox.configure(border_color=BORDER_COLOR)
+        return True
+
+    def _get_path_lines(self):
+        content = self.textbox.get("1.0", "end")
+        return [
+            (line_number, line.strip())
+            for line_number, line in enumerate(content.splitlines(), start=1)
+            if line.strip()
+        ]
+
+    def _find_invalid_path_lines(self):
+        invalid_lines = []
+        valid_paths = []
+
+        for line_number, path in self._get_path_lines():
+            try:
+                valid_paths.append(validate_save_path(path))
+            except ValueError:
+                invalid_lines.append(line_number)
+
+        return invalid_lines, valid_paths
+
+    def has_valid_paths(self):
+        invalid_lines, valid_paths = self._find_invalid_path_lines()
+        return not invalid_lines and bool(valid_paths)
+
     def browse_for_folder(self):
-        path = filedialog.askdirectory()
+        parent = self.dialog_parent if self.dialog_parent and self.dialog_parent.winfo_exists() else self.winfo_toplevel()
+        path = filedialog.askdirectory(parent=parent)
         if path:
             self.append_paths([path])
+        self._restore_dialog_parent_focus(parent)
+
+    def _restore_dialog_parent_focus(self, parent):
+        if not parent or not parent.winfo_exists():
+            return
+
+        try:
+            parent.lift()
+            parent.focus_set()
+        except Exception:
+            pass
 
     def open_paths(self):
-        self._open_path_values(self.get_paths())
+        invalid_lines, valid_paths = self._find_invalid_path_lines()
+        if invalid_lines:
+            self.textbox.configure(border_color=ERROR_COLOR)
+            self._highlight_invalid_lines(invalid_lines)
+            self._set_feedback()
+            return
+
+        if not valid_paths:
+            self.textbox.configure(border_color=ERROR_COLOR)
+            self._clear_path_highlights()
+            self._set_feedback()
+            return
+
+        for path in valid_paths:
+            os.startfile(str(Path(resolver_caminho(path))))
+
+        self.textbox.configure(border_color=BORDER_COLOR)
+        self._clear_path_highlights()
+        self._set_feedback(f"Abrindo {len(valid_paths)} pasta(s) no Explorador de Arquivos.", SUCCESS_COLOR)
 
     def append_paths(self, paths):
         normalized = self.get_paths()
@@ -479,23 +556,23 @@ class PathListEditor(ctk.CTkFrame):
 
         if changed:
             self.set_paths(normalized)
-            self.textbox.configure(border_color=BORDER_COLOR)
-            self.feedback_label.configure(
-                text=(
+            self._refresh_path_highlights()
+            self._set_feedback(
+                (
                     "Pasta adicionada aos diretórios de save."
                     if added_count == 1
                     else f"{added_count} pastas adicionadas aos diretórios de save."
                 ),
-                text_color=SUCCESS_COLOR,
+                SUCCESS_COLOR,
             )
 
     def get_paths(self):
-        content = self.textbox.get("1.0", "end")
-        return [line.strip() for line in content.splitlines() if line.strip()]
+        return [path for _line_number, path in self._get_path_lines()]
 
     def set_paths(self, paths):
         self.textbox.delete("1.0", "end")
         self.textbox.insert("1.0", "\n".join(paths))
+        self._refresh_path_highlights()
 
     def _open_path_from_click(self, event):
         try:
@@ -504,77 +581,53 @@ class PathListEditor(ctk.CTkFrame):
             return
 
         line_value = self.textbox.get(f"{line}.0", f"{line}.end").strip()
-        if line_value:
-            self._open_path_values([line_value])
+        if not line_value:
+            return
 
-    def _open_path_values(self, paths):
-        valid_paths = []
-        errors = []
-
-        for index, raw_path in enumerate(paths, start=1):
-            candidate = raw_path.strip()
-            if not candidate:
-                continue
-
-            resolved = Path(resolver_caminho(candidate))
-            if not resolved.exists():
-                errors.append(f"Linha {index}: pasta não encontrada.")
-                continue
-            if not resolved.is_dir():
-                errors.append(f"Linha {index}: o caminho não é uma pasta.")
-                continue
-
-            resolved_str = str(resolved)
-            if resolved_str not in valid_paths:
-                valid_paths.append(resolved_str)
-
-        if errors:
+        try:
+            normalized = validate_save_path(line_value)
+        except ValueError:
             self.textbox.configure(border_color=ERROR_COLOR)
-            self.feedback_label.configure(
-                text="\n".join(errors[:3]),
-                text_color=ERROR_COLOR,
-            )
+            self._highlight_invalid_lines([line])
+            self._set_feedback()
             return
-
-        if not valid_paths:
-            self.feedback_label.configure(
-                text="Adicione ao menos uma pasta válida para abrir.",
-                text_color=TEXT_SECONDARY,
-            )
-            return
-
-        for path in valid_paths:
-            os.startfile(path)
 
         self.textbox.configure(border_color=BORDER_COLOR)
-        self.feedback_label.configure(
-            text=f"Abrindo {len(valid_paths)} pasta(s) no Explorador de Arquivos.",
-            text_color=SUCCESS_COLOR,
-        )
+        self._clear_path_highlights()
+        self._set_feedback("Abrindo pasta no Explorador de Arquivos.", SUCCESS_COLOR)
+        os.startfile(str(Path(resolver_caminho(normalized))))
 
     def validate(self, show_error=True):
-        paths = self.get_paths()
-        errors = collect_save_path_errors(paths)
-        if errors:
+        invalid_lines, valid_paths = self._find_invalid_path_lines()
+        if invalid_lines:
             if show_error:
-                self.feedback_label.configure(text="\n".join(errors[:3]))
+                self._highlight_invalid_lines(invalid_lines)
+                self._set_feedback()
             self.textbox.configure(border_color=ERROR_COLOR)
-            self.feedback_label.configure(text_color=ERROR_COLOR)
+            self._notify_validation_change(False)
+            return False
+
+        if not valid_paths:
+            self._clear_path_highlights()
+            self._set_feedback()
+            self.textbox.configure(border_color=ERROR_COLOR)
+            self._notify_validation_change(False)
             return False
 
         self.textbox.configure(border_color=BORDER_COLOR)
-        if paths:
-            self.feedback_label.configure(
-                text=f"{len(paths)} diretório(s) validado(s) com sucesso.",
-                text_color=SUCCESS_COLOR,
-            )
-        else:
-            self.feedback_label.configure(text="", text_color=TEXT_SECONDARY)
+        self._clear_path_highlights()
+        self._set_feedback()
+        self._notify_validation_change(True)
         return True
+
+    def _notify_validation_change(self, valid):
+        if self.on_validation_change:
+            self.on_validation_change(valid)
 
     def clear_feedback(self):
         self.textbox.configure(border_color=BORDER_COLOR)
-        self.feedback_label.configure(text="", text_color=TEXT_SECONDARY)
+        self._clear_path_highlights()
+        self._set_feedback()
 
 
 class ProfileCard(ctk.CTkFrame):

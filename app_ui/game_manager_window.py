@@ -1,4 +1,4 @@
-import tkinter.messagebox as messagebox
+﻿import tkinter.messagebox as messagebox
 
 import customtkinter as ctk
 
@@ -70,9 +70,11 @@ class GameManagerWindow(ctk.CTkToplevel):
         self._build_game_list()
         self._build_editor()
         self.refresh()
+        self.start_new_game()
         self._fit_to_master()
         self.bind("<Configure>", self._on_resize)
         self.after(90, self._show_when_ready)
+        self.after(120, self._bind_mousewheel_scopes)
         self.protocol("WM_DELETE_WINDOW", self._handle_close)
 
     def _ensure_dnd_for_window(self):
@@ -97,16 +99,101 @@ class GameManagerWindow(ctk.CTkToplevel):
 
         targets = (
             self,
-            self.editor_scroll,
+            self.right_panel,
             self.paths_editor,
         )
         for target in targets:
             register_drop_target_tree(target, self.dnd_context, self.paths_editor.append_paths)
         self.paths_editor.refresh_drop_targets()
 
+    def _bind_mousewheel_scopes(self):
+        if not self.winfo_exists():
+            return
+
+        self._bind_scrollable_mousewheel(self.game_list_frame)
+        self._bind_textbox_mousewheel(self.paths_editor.textbox)
+
+    def _bind_scrollable_mousewheel(self, scrollable):
+        canvas = getattr(scrollable, "_parent_canvas", None)
+        if not canvas:
+            return
+
+        def on_mousewheel(event):
+            canvas.yview_scroll(self._mousewheel_units(event), "units")
+            return "break"
+
+        def on_button_4(_event):
+            canvas.yview_scroll(-4, "units")
+            return "break"
+
+        def on_button_5(_event):
+            canvas.yview_scroll(4, "units")
+            return "break"
+
+        self._bind_mousewheel_tree(scrollable, on_mousewheel, on_button_4, on_button_5)
+        self._bind_mousewheel_tree(canvas, on_mousewheel, on_button_4, on_button_5)
+
+    def _bind_textbox_mousewheel(self, textbox):
+        native_textbox = getattr(textbox, "_textbox", None)
+        target = native_textbox or textbox
+
+        def on_mousewheel(event):
+            target.yview_scroll(self._mousewheel_units(event), "units")
+            return "break"
+
+        def on_button_4(_event):
+            target.yview_scroll(-4, "units")
+            return "break"
+
+        def on_button_5(_event):
+            target.yview_scroll(4, "units")
+            return "break"
+
+        self._bind_mousewheel_tree(textbox, on_mousewheel, on_button_4, on_button_5)
+        if native_textbox:
+            self._bind_mousewheel_tree(native_textbox, on_mousewheel, on_button_4, on_button_5)
+
+    def _mousewheel_units(self, event):
+        steps = max(1, abs(getattr(event, "delta", 120)) // 120)
+        direction = -1 if event.delta > 0 else 1
+        return direction * steps * 4
+
+    def _bind_mousewheel_tree(self, widget, on_mousewheel, on_button_4, on_button_5, visited=None):
+        if visited is None:
+            visited = set()
+
+        widget_id = str(widget)
+        if widget_id in visited:
+            return
+        visited.add(widget_id)
+
+        try:
+            widget.bind("<MouseWheel>", on_mousewheel)
+            widget.bind("<Button-4>", on_button_4)
+            widget.bind("<Button-5>", on_button_5)
+        except Exception:
+            return
+
+        for child in getattr(widget, "winfo_children", lambda: [])():
+            self._bind_mousewheel_tree(child, on_mousewheel, on_button_4, on_button_5, visited)
+
+        for attr_name in (
+            "_canvas",
+            "_label",
+            "_text_label",
+            "_image_label",
+            "_textbox",
+            "_entry",
+            "_parent_canvas",
+            "_parent_frame",
+        ):
+            child = getattr(widget, attr_name, None)
+            if child and child is not widget:
+                self._bind_mousewheel_tree(child, on_mousewheel, on_button_4, on_button_5, visited)
+
     def _build_titlebar(self):
         titlebar = ctk.CTkFrame(self.shell, fg_color="transparent")
-        titlebar.grid(row=0, column=0, sticky="ew", padx=18, pady=(16, 10))
+        titlebar.grid(row=0, column=0, sticky="ew", padx=18, pady=(14, 8))
         titlebar.grid_columnconfigure(0, weight=1)
 
         title_block = ctk.CTkFrame(titlebar, fg_color="transparent")
@@ -119,14 +206,6 @@ class GameManagerWindow(ctk.CTkToplevel):
             text_color=TEXT_PRIMARY,
             anchor="w",
         ).grid(row=0, column=0, sticky="w")
-
-        ctk.CTkLabel(
-            title_block,
-            text="Edite a biblioteca sem sair do launcher",
-            font=("Segoe UI", 12),
-            text_color=TEXT_SECONDARY,
-            anchor="w",
-        ).grid(row=1, column=0, sticky="w", pady=(2, 0))
 
     def _build_game_list(self):
         self.left_panel = ctk.CTkFrame(
@@ -196,11 +275,14 @@ class GameManagerWindow(ctk.CTkToplevel):
         )
         self.right_panel.grid(row=0, column=1, sticky="nsew", padx=(7, 0), pady=0)
         self.right_panel.grid_columnconfigure(0, weight=1)
-        self.right_panel.grid_rowconfigure(2, weight=1)
+        self.right_panel.grid_rowconfigure(2, weight=0)
+        self.right_panel.grid_rowconfigure(3, weight=1)
+        self.right_panel.grid_rowconfigure(4, weight=0)
+        self.right_panel.grid_rowconfigure(5, weight=0)
 
         self.title_label = ctk.CTkLabel(
             self.right_panel,
-            text="Editor de jogo",
+            text="Adicionar jogo",
             font=("Segoe UI Bold", 18),
             text_color=TEXT_PRIMARY,
             anchor="w",
@@ -209,30 +291,21 @@ class GameManagerWindow(ctk.CTkToplevel):
 
         self.mode_label = ctk.CTkLabel(
             self.right_panel,
-            text="Modo: novo jogo",
-            font=("Segoe UI Semibold", 13),
+            text="",
+            font=("Segoe UI", 12),
             text_color=TEXT_SECONDARY,
             anchor="w",
         )
-        self.mode_label.grid(row=1, column=0, sticky="ew", padx=18, pady=(0, 8))
-
-        self.editor_scroll = ctk.CTkScrollableFrame(
-            self.right_panel,
-            fg_color="transparent",
-            corner_radius=0,
-            border_width=0,
-        )
-        self.editor_scroll.grid(row=2, column=0, sticky="nsew", padx=0, pady=0)
-        self.editor_scroll.grid_columnconfigure(0, weight=1)
+        self.mode_label.grid(row=1, column=0, sticky="ew", padx=18, pady=(0, 6))
 
         self.form_card = ctk.CTkFrame(
-            self.editor_scroll,
+            self.right_panel,
             fg_color=SURFACE_PRIMARY,
             corner_radius=14,
             border_width=1,
             border_color=BORDER_COLOR,
         )
-        self.form_card.grid(row=0, column=0, sticky="ew", padx=18, pady=(0, 8))
+        self.form_card.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 6))
         self.form_card.grid_columnconfigure(0, weight=1)
 
         self.name_field = ValidatedEntry(
@@ -241,29 +314,41 @@ class GameManagerWindow(ctk.CTkToplevel):
             placeholder_text="Ex.: Cyberpunk 2077",
             validator=validate_game_name,
         )
-        self.name_field.grid(row=0, column=0, sticky="ew", padx=12, pady=8)
+        self.name_field.grid(row=0, column=0, sticky="ew", padx=12, pady=6)
         self.name_field.entry.configure(height=36)
         self.name_field.error_label.configure(wraplength=480)
 
         self.paths_editor = PathListEditor(
-            self.editor_scroll,
+            self.right_panel,
             dnd_context=self.dnd_context,
-            textbox_height=112,
+            textbox_height=132,
+            dialog_parent=self,
+            on_validation_change=self._handle_field_validation_change,
         )
-        self.paths_editor.grid(row=1, column=0, sticky="nsew", padx=18, pady=(0, 8))
+        self.paths_editor.grid(row=3, column=0, sticky="nsew", padx=18, pady=(0, 6))
+        self.name_field.entry.bind(
+            "<KeyRelease>",
+            lambda _event: self.after_idle(self._refresh_validation_status),
+            add="+",
+        )
+        self.name_field.entry.bind(
+            "<FocusOut>",
+            lambda _event: self.after_idle(self._refresh_validation_status),
+            add="+",
+        )
 
         self.status_label = ctk.CTkLabel(
             self.right_panel,
-            text="Preencha os dados do jogo e salve as alterações.",
+            text="Preencha os dados do jogo e salve as alteracoes.",
             font=("Segoe UI", 12),
             text_color=TEXT_SECONDARY,
             anchor="w",
             justify="left",
         )
-        self.status_label.grid(row=3, column=0, sticky="ew", padx=18, pady=(8, 8))
+        self.status_label.grid(row=4, column=0, sticky="ew", padx=18, pady=(2, 8))
 
         self.button_row = ctk.CTkFrame(self.right_panel, fg_color="transparent")
-        self.button_row.grid(row=4, column=0, sticky="ew", padx=18, pady=(0, 16))
+        self.button_row.grid(row=5, column=0, sticky="ew", padx=18, pady=(0, 14))
         self.button_row.grid_columnconfigure(0, weight=1)
         self.button_row.grid_columnconfigure(1, weight=1)
 
@@ -275,7 +360,7 @@ class GameManagerWindow(ctk.CTkToplevel):
             fg_color=ACCENT_COLOR,
             hover_color=ACCENT_HOVER,
         )
-        self.save_button.grid(row=0, column=0, padx=(0, 8), sticky="ew")
+        self.save_button.grid(row=0, column=0, columnspan=2, padx=0, sticky="ew")
 
         self.delete_button = ctk.CTkButton(
             self.button_row,
@@ -286,6 +371,7 @@ class GameManagerWindow(ctk.CTkToplevel):
             height=38,
         )
         self.delete_button.grid(row=0, column=1, padx=(8, 0), sticky="ew")
+        self.delete_button.grid_remove()
 
     def refresh(self, selected_game=None):
         self.game_buttons = {}
@@ -320,12 +406,12 @@ class GameManagerWindow(ctk.CTkToplevel):
                 button.grid(row=index, column=0, sticky="ew", padx=12, pady=8)
                 self.game_buttons[game] = button
 
+        self._bind_mousewheel_scopes()
+
         if selected_game and selected_game in filtered_games:
             self.select_game(selected_game)
         elif self.selected_game in filtered_games:
             self.select_game(self.selected_game)
-        elif filtered_games:
-            self.select_game(filtered_games[0])
         else:
             self.start_new_game()
 
@@ -334,9 +420,12 @@ class GameManagerWindow(ctk.CTkToplevel):
         self.name_field.set(game)
         self.paths_editor.set_paths(self.get_paths_for_game(game))
         self.paths_editor.validate(show_error=True)
+        self.title_label.configure(text="Editar jogo")
         self.status_label.configure(text=f"Editando '{game}'.")
-        self.mode_label.configure(text=f"Modo: editando '{game}'")
+        self.mode_label.configure(text=game)
         self.save_button.configure(text="Salvar alterações")
+        self.save_button.grid_configure(column=0, columnspan=1, padx=(0, 8), sticky="ew")
+        self.delete_button.grid()
         self.delete_button.configure(state="normal")
         self._refresh_button_states()
 
@@ -345,12 +434,39 @@ class GameManagerWindow(ctk.CTkToplevel):
         self.name_field.clear()
         self.paths_editor.set_paths([])
         self.paths_editor.clear_feedback()
-        self.status_label.configure(text="Modo de criação de novo jogo.")
-        self.mode_label.configure(text="Modo: novo jogo")
+        self.title_label.configure(text="Adicionar jogo")
+        self.status_label.configure(text="")
+        self.mode_label.configure(text="")
         self.save_button.configure(text="Adicionar jogo")
+        self.save_button.grid_configure(column=0, columnspan=2, padx=0, sticky="ew")
+        self.delete_button.grid_remove()
         self.delete_button.configure(state="disabled")
         self._refresh_button_states()
         self.name_field.focus()
+
+    def _handle_field_validation_change(self, _valid):
+        self._refresh_validation_status()
+
+    def _refresh_validation_status(self):
+        if not self.winfo_exists():
+            return
+
+        if self.name_field.error_message:
+            return
+
+        if not self.paths_editor.has_valid_paths():
+            return
+
+        if self.selected_game:
+            self.status_label.configure(
+                text=f"Editando '{self.selected_game}'.",
+                text_color=TEXT_SECONDARY,
+            )
+        else:
+            self.status_label.configure(
+                text="",
+                text_color=TEXT_SECONDARY,
+            )
 
     def _refresh_button_states(self):
         for game, button in self.game_buttons.items():
@@ -385,7 +501,7 @@ class GameManagerWindow(ctk.CTkToplevel):
             "Excluir jogo",
             (
                 f"Deseja excluir o jogo '{self.selected_game}'?\n\n"
-                "Os perfis salvos e as configurações desse jogo também serão removidos."
+                "Os perfis salvos e as configuracoes desse jogo tambem serao removidos."
             ),
             parent=self,
         )
@@ -404,7 +520,6 @@ class GameManagerWindow(ctk.CTkToplevel):
         self.paths_editor.textbox.configure(state=state)
         self.paths_editor.add_button.configure(state=state)
         self.paths_editor.open_button.configure(state=state)
-        self.paths_editor.validate_button.configure(state=state)
         self.new_button.configure(state=state)
         self.save_button.configure(state=state)
         self.delete_button.configure(state=state if self.selected_game else "disabled")
@@ -438,23 +553,11 @@ class GameManagerWindow(ctk.CTkToplevel):
             return
 
         self.update_idletasks()
-        self._sync_editor_scroll_width()
         self._reset_scroll_positions()
         self.update_idletasks()
 
-    def _sync_editor_scroll_width(self):
-        if not getattr(self, "editor_scroll", None) or not self.editor_scroll.winfo_exists():
-            return
-
-        canvas = getattr(self.editor_scroll, "_parent_canvas", None)
-        if not canvas:
-            return
-
-        width = max(320, self.right_panel.winfo_width() - 20)
-        canvas.configure(width=width)
-
     def _reset_scroll_positions(self):
-        for frame in (getattr(self, "game_list_frame", None), getattr(self, "editor_scroll", None)):
+        for frame in (getattr(self, "game_list_frame", None),):
             if not frame or not frame.winfo_exists():
                 continue
             canvas = getattr(frame, "_parent_canvas", None)
@@ -502,3 +605,4 @@ class GameManagerWindow(ctk.CTkToplevel):
             self.body.grid_columnconfigure(1, weight=3)
             self.body.grid_rowconfigure(0, weight=1)
             self.body.grid_rowconfigure(1, weight=0)
+

@@ -9,7 +9,11 @@ from .config_manager import (
     listar_jogos,
     obter_diretorios_jogo,
 )
-from .save_manager import excluir_jogo_dos_perfis, renomear_jogo_em_perfis
+from .save_manager import (
+    excluir_jogo_dos_perfis,
+    renomear_jogo_em_perfis,
+    validar_renomeacao_jogo_em_perfis,
+)
 from .settings_manager import (
     alternar_favorito,
     eh_favorito,
@@ -17,6 +21,7 @@ from .settings_manager import (
     remover_jogo_dos_favoritos,
     renomear_jogo_nos_favoritos,
 )
+from .validators import validate_game_name, validate_save_paths
 
 LIBRARY_FILE = Path("game_library.json")
 
@@ -96,14 +101,48 @@ def alternar_favorito_jogo(jogo):
 
 
 def salvar_jogo(nome_atual, novo_nome, diretorios):
+    novo_nome = validate_game_name(novo_nome)
+    diretorios = validate_save_paths(diretorios)
+
     if not nome_atual:
         return adicionar_jogo(novo_nome, diretorios)
 
-    if nome_atual != novo_nome:
-        renomear_jogo_em_perfis(nome_atual, novo_nome)
-        renomear_jogo_nos_favoritos(nome_atual, novo_nome)
+    nome_atual = validate_game_name(nome_atual)
+    jogos = listar_jogos()
+    if nome_atual not in jogos:
+        raise FileNotFoundError("Jogo nao encontrado.")
 
-    return atualizar_jogo(nome_atual, novo_nome, diretorios)
+    if nome_atual != novo_nome and novo_nome in jogos:
+        raise FileExistsError("Ja existe um jogo com esse nome.")
+
+    diretorios_anteriores = obter_diretorios_jogo(nome_atual)
+
+    if nome_atual != novo_nome:
+        validar_renomeacao_jogo_em_perfis(nome_atual, novo_nome)
+
+    atualizado = atualizar_jogo(nome_atual, novo_nome, diretorios)
+
+    try:
+        if nome_atual != novo_nome:
+            renomear_jogo_em_perfis(nome_atual, novo_nome)
+            renomear_jogo_nos_favoritos(nome_atual, novo_nome)
+    except Exception:
+        if nome_atual != novo_nome:
+            try:
+                renomear_jogo_em_perfis(novo_nome, nome_atual)
+            except Exception:
+                pass
+            try:
+                renomear_jogo_nos_favoritos(novo_nome, nome_atual)
+            except Exception:
+                pass
+            try:
+                atualizar_jogo(novo_nome, nome_atual, diretorios_anteriores)
+            except Exception:
+                pass
+        raise
+
+    return atualizado
 
 
 def excluir_jogo_com_dados(jogo, progress_callback=None):

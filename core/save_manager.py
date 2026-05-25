@@ -10,6 +10,7 @@ from .storage_manager import get_user_profiles_dir
 from .validators import ensure_safe_save_directory, validate_profile_name
 
 STATE_FILE = Path("profile_state.json")
+RESTORE_BACKUPS_DIR = Path("data") / "restore_backups"
 
 
 def _emit_progress(callback, progress, message):
@@ -171,6 +172,69 @@ def _copy_tree_contents(source_path, target_path, tracker, context_label):
         tracker.step(f"{context_label}: copiando {relative_file.name}")
 
 
+def _copy_tree_contents_without_progress(source_path, target_path):
+    source = Path(source_path)
+    target = Path(target_path)
+    if not source.exists():
+        return
+
+    for directory in sorted(path for path in source.rglob("*") if path.is_dir()):
+        (target / directory.relative_to(source)).mkdir(parents=True, exist_ok=True)
+
+    for relative_file in _list_files(source):
+        source_file = source / relative_file
+        target_file = target / relative_file
+        target_file.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source_file, target_file)
+
+
+def _replace_tree_contents(source_path, target_path, tracker, context_label):
+    target = Path(target_path)
+    garantir_pasta(target)
+    _remove_tree_contents(target, tracker, context_label)
+    _copy_tree_contents(source_path, target, tracker, context_label)
+
+
+def _validate_complete_profile_paths(profile_paths):
+    missing = [
+        f"pasta_{index}"
+        for index, profile_path in enumerate(profile_paths)
+        if not profile_path.is_dir()
+    ]
+    if missing:
+        missing_text = ", ".join(missing)
+        raise FileNotFoundError(
+            "Perfil incompleto. Nada foi alterado nos saves reais. "
+            f"Pastas ausentes: {missing_text}."
+        )
+
+
+def _backup_current_save_paths(save_paths):
+    RESTORE_BACKUPS_DIR.mkdir(parents=True, exist_ok=True)
+    backup_root = RESTORE_BACKUPS_DIR / f"msm_restore_backup_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
+    backup_root.mkdir(parents=True, exist_ok=False)
+    backup_paths = []
+
+    try:
+        for index, save_path in enumerate(save_paths):
+            backup_path = backup_root / f"pasta_{index}"
+            backup_path.mkdir(parents=True, exist_ok=True)
+            if save_path.exists():
+                _copy_tree_contents_without_progress(save_path, backup_path)
+            backup_paths.append(backup_path)
+    except Exception:
+        shutil.rmtree(backup_root, ignore_errors=True)
+        raise
+
+    return backup_root, backup_paths
+
+
+def _restore_save_backups(save_paths, backup_paths):
+    rollback_tracker = ProgressTracker(1, None)
+    for save_path, backup_path in zip(save_paths, backup_paths):
+        _replace_tree_contents(backup_path, save_path, rollback_tracker, "Rollback")
+
+
 def _resolver_diretorios(paths):
     resolved_paths = [Path(resolver_caminho(path)) for path in paths]
     for path in resolved_paths:
@@ -215,14 +279,31 @@ def carregar_perfil(jogo, perfil, progress_callback=None):
         _obter_pasta_perfil(perfil, jogo) / f"pasta_{index}"
         for index in range(len(save_paths))
     ]
+    _validate_complete_profile_paths(profile_paths)
 
-    tracker = ProgressTracker(_count_sync_steps(profile_paths, save_paths), progress_callback)
+    backup_root, backup_paths = _backup_current_save_paths(save_paths)
+    total_steps = _count_sync_steps(profile_paths, save_paths)
+    total_steps += _count_sync_steps(save_paths, backup_paths)
+    tracker = ProgressTracker(total_steps, progress_callback)
     tracker.message("Carregando perfil selecionado...")
 
-    for index, (profile_path, save_path) in enumerate(zip(profile_paths, save_paths), start=1):
-        garantir_pasta(save_path)
-        _remove_tree_contents(save_path, tracker, f"Perfil {index}")
-        _copy_tree_contents(profile_path, save_path, tracker, f"Perfil {index}")
+    try:
+        for index, (profile_path, save_path) in enumerate(zip(profile_paths, save_paths), start=1):
+            _replace_tree_contents(profile_path, save_path, tracker, f"Perfil {index}")
+    except Exception as restore_error:
+        try:
+            _restore_save_backups(save_paths, backup_paths)
+        except Exception as rollback_error:
+            raise RuntimeError(
+                "Falha ao carregar o perfil e a recuperacao automatica tambem falhou. "
+                f"Backup temporario preservado em: {backup_root}"
+            ) from rollback_error
+        raise RuntimeError(
+            "Falha ao carregar o perfil. Os saves reais foram restaurados a partir "
+            "do backup temporario."
+        ) from restore_error
+    finally:
+        shutil.rmtree(backup_root, ignore_errors=True)
 
     _setar_perfil_ativo(jogo, perfil)
     tracker.finish(f"Perfil '{perfil}' carregado com sucesso.")
@@ -313,9 +394,10 @@ def excluir_perfil(jogo, perfil, progress_callback=None):
     return perfil
 
 
-def renomear_jogo_em_perfis(nome_atual, novo_nome):
+def validar_renomeacao_jogo_em_perfis(nome_atual, novo_nome):
     profiles_dir = get_user_profiles_dir()
     garantir_pasta(profiles_dir)
+    plan = []
 
     for perfil in profiles_dir.iterdir():
         if not perfil.is_dir():
@@ -327,15 +409,34 @@ def renomear_jogo_em_perfis(nome_atual, novo_nome):
         if not origem.is_dir():
             continue
 
-        garantir_pasta(destino.parent)
         if destino.exists():
             raise FileExistsError(
                 "Já existe uma pasta de perfis para o novo nome do jogo."
             )
 
-        shutil.move(str(origem), str(destino))
+        plan.append((origem, destino))
 
-    renomear_jogo_no_estado(nome_atual, novo_nome)
+    return plan
+
+
+def renomear_jogo_em_perfis(nome_atual, novo_nome):
+    original_state = _carregar_estado()
+    plan = validar_renomeacao_jogo_em_perfis(nome_atual, novo_nome)
+    moved = []
+    try:
+        for origem, destino in plan:
+            garantir_pasta(destino.parent)
+            shutil.move(str(origem), str(destino))
+            moved.append((origem, destino))
+
+        renomear_jogo_no_estado(nome_atual, novo_nome)
+    except Exception:
+        for origem, destino in reversed(moved):
+            if destino.exists() and not origem.exists():
+                garantir_pasta(origem.parent)
+                shutil.move(str(destino), str(origem))
+        _salvar_estado(original_state)
+        raise
 
 
 def excluir_jogo_dos_perfis(jogo, progress_callback=None):

@@ -246,7 +246,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
                 page_name = "game"
 
         if page_name in {"mods", "settings"}:
-            self._set_status(f"PÃ¡gina '{page_name}' preparada para uma etapa futura.", "info")
+            self._set_status(f"Pagina '{page_name}' preparada para uma etapa futura.", "info")
             return
 
         if page_name == "game" and not self.current_game:
@@ -689,6 +689,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
         )
         self.profile_list.grid(row=3, column=0, sticky="nsew", padx=18, pady=(0, 18))
         self.profile_list.grid_columnconfigure(0, weight=1)
+        self._bind_profile_mousewheel()
 
     def _build_sidebar(self):
         self.selected_card = ctk.CTkFrame(
@@ -893,7 +894,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
 
         self.status_message = ctk.CTkLabel(
             self.status_card,
-            text="Selecione um perfil para comeÃ§ar.",
+            text="Selecione um perfil para comecar.",
             font=("Segoe UI", 13),
             text_color=TEXT_SECONDARY,
             justify="left",
@@ -1246,7 +1247,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
             return
 
         self._set_status(
-            f"Atalho de execuÃƒÂ§ÃƒÂ£o de '{self.current_game}' preparado para uma etapa futura.",
+            f"Atalho de execucao de '{self.current_game}' preparado para uma etapa futura.",
             "info",
         )
 
@@ -1258,13 +1259,14 @@ class SaveManagerApp(get_dnd_ctk_base()):
             self.profile_count_label.configure(text="0 perfis")
             empty = ctk.CTkLabel(
                 self.profile_list,
-                text="Cadastre um jogo para comeÃ§ar a criar perfis.",
+                text="Cadastre um jogo para comecar a criar perfis.",
                 text_color=TEXT_SECONDARY,
                 anchor="w",
                 justify="left",
             )
             empty.grid(row=0, column=0, sticky="ew", padx=18, pady=18)
             self._update_selected_profile(None)
+            self._bind_profile_mousewheel()
             return
 
         search = self.profile_search.get().strip().lower()
@@ -1286,6 +1288,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
                 justify="left",
             )
             empty.grid(row=0, column=0, sticky="ew", padx=18, pady=18)
+            self._bind_profile_mousewheel()
             return
 
         for index, profile in enumerate(filtered_profiles):
@@ -1296,6 +1299,66 @@ class SaveManagerApp(get_dnd_ctk_base()):
                 on_activate=self._activate_profile,
             )
             card.grid(row=index, column=0, sticky="ew", padx=14, pady=10)
+        self._bind_profile_mousewheel()
+
+    def _bind_profile_mousewheel(self):
+        if not hasattr(self, "profile_list"):
+            return
+
+        canvas = getattr(self.profile_list, "_parent_canvas", None)
+        if not canvas:
+            return
+
+        def on_mousewheel(event):
+            canvas.yview_scroll(self._mousewheel_units(event), "units")
+            return "break"
+
+        def on_button_4(_event):
+            canvas.yview_scroll(-4, "units")
+            return "break"
+
+        def on_button_5(_event):
+            canvas.yview_scroll(4, "units")
+            return "break"
+
+        self._bind_mousewheel_tree(self.profile_list, on_mousewheel, on_button_4, on_button_5)
+        self._bind_mousewheel_tree(canvas, on_mousewheel, on_button_4, on_button_5)
+
+    def _mousewheel_units(self, event):
+        steps = max(1, abs(getattr(event, "delta", 120)) // 120)
+        direction = -1 if event.delta > 0 else 1
+        return direction * steps * 4
+
+    def _bind_mousewheel_tree(self, widget, on_mousewheel, on_button_4, on_button_5, visited=None):
+        if visited is None:
+            visited = set()
+
+        widget_id = str(widget)
+        if widget_id in visited:
+            return
+        visited.add(widget_id)
+
+        try:
+            widget.bind("<MouseWheel>", on_mousewheel)
+            widget.bind("<Button-4>", on_button_4)
+            widget.bind("<Button-5>", on_button_5)
+        except Exception:
+            return
+
+        for child in getattr(widget, "winfo_children", lambda: [])():
+            self._bind_mousewheel_tree(child, on_mousewheel, on_button_4, on_button_5, visited)
+
+        for attr_name in (
+            "_canvas",
+            "_label",
+            "_text_label",
+            "_image_label",
+            "_parent_canvas",
+            "_parent_frame",
+        ):
+            child = getattr(widget, attr_name, None)
+            if child and child is not widget:
+                self._bind_mousewheel_tree(child, on_mousewheel, on_button_4, on_button_5, visited)
 
     def _update_selected_profile(self, profile_name):
         self.selected_profile = profile_name
@@ -1309,7 +1372,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
         if active_profile:
             self.selected_hint.configure(text=f"Ativo: {active_profile}")
         else:
-            self.selected_hint.configure(text="Crie ou carregue um perfil para ativar salvamento rÃ¡pido.")
+            self.selected_hint.configure(text="Crie ou carregue um perfil para ativar salvamento rapido.")
 
     def _on_game_selected(self, selected_game):
         if self.busy:
@@ -1439,18 +1502,18 @@ class SaveManagerApp(get_dnd_ctk_base()):
             return False
 
         warnings = coletar_alertas_pre_troca(self.current_game, obter_diretorios_jogo(self.current_game))
-        messages = [f"Deseja continuar com a aÃ§Ã£o '{action_label}' no jogo '{self.current_game}'?"]
+        messages = [f"Deseja continuar com a acao '{action_label}' no jogo '{self.current_game}'?"]
 
         if overwrite:
             file_count = contar_arquivos_em_diretorios(obter_diretorios_jogo(self.current_game))
             if file_count > 0:
-                messages.append(f"Os {file_count} arquivo(s) atuais de save podem ser substituÃ­dos.")
+                messages.append(f"Os {file_count} arquivo(s) atuais de save podem ser substituidos.")
 
         if warnings:
             messages.append("Alertas detectados:")
             messages.extend(f"- {warning}" for warning in warnings)
 
-        return messagebox.askyesno("Confirmar operaÃ§Ã£o", "\n\n".join(messages), parent=self)
+        return messagebox.askyesno("Confirmar operacao", "\n\n".join(messages), parent=self)
 
     def _activate_profile(self, profile_name):
         if not self.current_game or self.busy:
@@ -1459,7 +1522,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
         active_profile = obter_perfil_ativo(self.current_game)
         if profile_name == active_profile:
             self._update_selected_profile(profile_name)
-            self._set_status(f"O perfil '{profile_name}' jÃ¡ estÃ¡ ativo.", "info")
+            self._set_status(f"O perfil '{profile_name}' ja esta ativo.", "info")
             return
 
         self._update_selected_profile(profile_name)
@@ -1519,7 +1582,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
             "Excluir perfil",
             (
                 f"Deseja excluir o perfil '{self.selected_profile}'?\n\n"
-                "Todos os arquivos associados a ele serÃ£o removidos."
+                "Todos os arquivos associados a ele serao removidos."
             ),
             parent=self,
         )
@@ -1529,7 +1592,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
         profile_name = self.selected_profile
         self._run_operation(
             "Excluindo perfil...",
-            f"Perfil '{profile_name}' excluÃ­do com sucesso.",
+            f"Perfil '{profile_name}' excluido com sucesso.",
             lambda progress: excluir_perfil(self.current_game, profile_name, progress_callback=progress),
             on_success=lambda _result: self._after_profile_deleted(),
         )
@@ -1550,8 +1613,8 @@ class SaveManagerApp(get_dnd_ctk_base()):
             "Limpar save atual",
             (
                 f"Deseja limpar somente as pastas de save configuradas para '{self.current_game}' no PC?\n\n"
-                "Os backups e perfis salvos dentro do programa nÃ£o serÃ£o apagados.\n\n"
-                "Essa aÃ§Ã£o nÃ£o pode ser desfeita."
+                "Os backups e perfis salvos dentro do programa nao serao apagados.\n\n"
+                "Essa acao nao pode ser desfeita."
             ),
             parent=self,
         )
@@ -1579,7 +1642,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
             "Salvar save atual",
             (
                 f"Deseja salvar o estado atual dos saves no perfil ativo '{active_profile}'?\n\n"
-                "Isso atualiza o backup desse perfil com os arquivos que estÃ£o nas pastas do jogo agora."
+                "Isso atualiza o backup desse perfil com os arquivos que estao nas pastas do jogo agora."
             ),
             parent=self,
         )
@@ -1622,7 +1685,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
 
     def _save_game_from_manager(self, current_name, new_name, paths):
         self._run_operation(
-            "Salvando configuraÃ§Ã£o do jogo...",
+            "Salvando configuracao do jogo...",
             f"Jogo '{new_name}' salvo com sucesso.",
             lambda _progress: salvar_jogo(current_name, new_name, paths),
             on_success=lambda result: self._after_game_saved(result),
@@ -1640,7 +1703,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
     def _delete_game_from_manager(self, game_name):
         self._run_operation(
             "Excluindo jogo e seus perfis...",
-            f"Jogo '{game_name}' excluÃ­do com sucesso.",
+            f"Jogo '{game_name}' excluido com sucesso.",
             lambda progress: excluir_jogo_com_dados(game_name, progress_callback=progress),
             on_success=lambda _result: self._after_game_deleted(),
             on_error=lambda message: self._show_game_manager_error("Excluir jogo", message),

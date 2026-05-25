@@ -64,7 +64,7 @@ Compilar todos os modulos principais:
 Buscar TODOs ou textos problematicos:
 
 ```powershell
-rg "TODO|FIXME|Ã" app_ui core *.py
+rg "TODO|FIXME|mojibake" app_ui core *.py
 ```
 
 Listar arquivos do repo:
@@ -100,7 +100,7 @@ Saidas:
 ## Cuidados de edicao
 
 - Salve arquivos Python como UTF-8.
-- Ha texto visivel com mojibake (`Ã§`, `Ã£`, etc.). Corrigir isso e uma boa tarefa separada.
+- Historicamente alguns textos visiveis tiveram mojibake. Ao editar UI, corrija texto quebrado com cuidado e salve como UTF-8.
 - Mantenha logica de arquivo em `core/`; a UI deve orquestrar e exibir resultado.
 - Operacoes lentas ou destrutivas devem continuar usando `_run_operation`.
 - Nao atualize widgets diretamente de threads secundarias.
