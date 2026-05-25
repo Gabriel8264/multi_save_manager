@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+
+# Build artifacts
+build/
+dist/
+*.spec.bak
+.codex_tmp/
+
+# Local user data
+Profiles/
+config.json
+settings.json
+profile_state.json
+game_library.json
+migration_backups/
+data/migration_state.json
+data/default_user/settings.json
+data/default_user/profiles/*
+data/default_user/saves/*
+data/default_user/mods/*
+!data/default_user/profiles/.gitkeep
+!data/default_user/saves/.gitkeep
+!data/default_user/mods/.gitkeep
+data/users/*/settings.json
+data/users/*/profiles/*
+data/users/*/saves/*
+data/users/*/mods/*
+!data/users/*/profiles/.gitkeep
+!data/users/*/saves/.gitkeep
+!data/users/*/mods/.gitkeep
+
+# OS noise
+Thumbs.db
+Desktop.ini
