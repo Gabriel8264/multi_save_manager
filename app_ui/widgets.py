@@ -325,10 +325,10 @@ class PathListEditor(ctk.CTkFrame):
 
         self.drop_zone = tk.Frame(
             self,
-            height=34,
+            height=38,
             bg=_theme_color(SURFACE_TERTIARY),
             highlightthickness=1,
-            highlightbackground=_theme_color(BORDER_COLOR),
+            highlightbackground=_theme_color(ACCENT_COLOR),
             highlightcolor=_theme_color(ACCENT_COLOR),
         )
         self.drop_zone.grid(row=2, column=0, sticky="ew", pady=(0, 6))
@@ -337,9 +337,9 @@ class PathListEditor(ctk.CTkFrame):
 
         self.drop_zone_label = tk.Label(
             self.drop_zone,
-            text="Arraste uma pasta aqui ou use Selecionar pasta.",
+            text="+  Arraste uma pasta aqui",
             bg=_theme_color(SURFACE_TERTIARY),
-            fg=_theme_color(TEXT_PRIMARY),
+            fg=_theme_color(ACCENT_COLOR),
             font=("Segoe UI", 12, "bold"),
             anchor="center",
         )

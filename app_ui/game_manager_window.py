@@ -280,23 +280,53 @@ class GameManagerWindow(ctk.CTkToplevel):
         self.right_panel.grid_rowconfigure(4, weight=0)
         self.right_panel.grid_rowconfigure(5, weight=0)
 
+        self.editor_header = ctk.CTkFrame(self.right_panel, fg_color="transparent")
+        self.editor_header.grid(row=0, column=0, sticky="ew", padx=18, pady=(14, 8))
+        self.editor_header.grid_columnconfigure(1, weight=1)
+
+        self.game_visual = ctk.CTkFrame(
+            self.editor_header,
+            width=52,
+            height=52,
+            fg_color=SURFACE_TERTIARY,
+            corner_radius=12,
+            border_width=1,
+            border_color=ACCENT_COLOR,
+        )
+        self.game_visual.grid(row=0, column=0, rowspan=2, sticky="nw", padx=(0, 12))
+        self.game_visual.grid_propagate(False)
+        self.game_visual.grid_columnconfigure(0, weight=1)
+        self.game_visual.grid_rowconfigure(0, weight=1)
+
+        self.game_visual_label = ctk.CTkLabel(
+            self.game_visual,
+            text="+",
+            font=("Segoe UI Bold", 24),
+            text_color=ACCENT_COLOR,
+        )
+        self.game_visual_label.grid(row=0, column=0, sticky="nsew")
+
+        self.title_stack = ctk.CTkFrame(self.editor_header, fg_color="transparent")
+        self.title_stack.grid(row=0, column=1, sticky="ew")
+        self.title_stack.grid_columnconfigure(0, weight=1)
+
         self.title_label = ctk.CTkLabel(
-            self.right_panel,
+            self.title_stack,
             text="Adicionar jogo",
-            font=("Segoe UI Bold", 18),
+            font=("Segoe UI Bold", 20),
             text_color=TEXT_PRIMARY,
             anchor="w",
         )
-        self.title_label.grid(row=0, column=0, sticky="ew", padx=18, pady=(16, 6))
+        self.title_label.grid(row=0, column=0, sticky="ew")
 
         self.mode_label = ctk.CTkLabel(
-            self.right_panel,
+            self.title_stack,
             text="",
             font=("Segoe UI", 12),
             text_color=TEXT_SECONDARY,
             anchor="w",
         )
-        self.mode_label.grid(row=1, column=0, sticky="ew", padx=18, pady=(0, 6))
+        self.mode_label.grid(row=1, column=0, sticky="ew", pady=(4, 0))
 
         self.form_card = ctk.CTkFrame(
             self.right_panel,
@@ -421,6 +451,8 @@ class GameManagerWindow(ctk.CTkToplevel):
         self.paths_editor.set_paths(self.get_paths_for_game(game))
         self.paths_editor.validate(show_error=True)
         self.title_label.configure(text="Editar jogo")
+        self.game_visual_label.configure(text=self._game_initials(game), text_color=TEXT_PRIMARY)
+        self.game_visual.configure(fg_color=SURFACE_TERTIARY, border_color=ACCENT_COLOR)
         self.status_label.configure(text=f"Editando '{game}'.")
         self.mode_label.configure(text=game)
         self.save_button.configure(text="Salvar alterações")
@@ -435,6 +467,8 @@ class GameManagerWindow(ctk.CTkToplevel):
         self.paths_editor.set_paths([])
         self.paths_editor.clear_feedback()
         self.title_label.configure(text="Adicionar jogo")
+        self.game_visual_label.configure(text="+", text_color=ACCENT_COLOR)
+        self.game_visual.configure(fg_color=SURFACE_TERTIARY, border_color=ACCENT_COLOR)
         self.status_label.configure(text="")
         self.mode_label.configure(text="")
         self.save_button.configure(text="Adicionar jogo")
@@ -443,6 +477,12 @@ class GameManagerWindow(ctk.CTkToplevel):
         self.delete_button.configure(state="disabled")
         self._refresh_button_states()
         self.name_field.focus()
+
+    def _game_initials(self, game):
+        parts = [part for part in game.replace("_", " ").replace("-", " ").split() if part]
+        if not parts:
+            return "JG"
+        return "".join(part[0] for part in parts[:2]).upper()
 
     def _handle_field_validation_change(self, _valid):
         self._refresh_validation_status()
