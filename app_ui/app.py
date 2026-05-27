@@ -34,8 +34,10 @@ from core.game_manager import (
     listar_jogos_biblioteca,
     listar_jogos_recentes_biblioteca,
     listar_nomes_jogos,
+    obter_launch_config_jogo,
     salvar_jogo,
 )
+from core.launch_manager import LaunchCancelled, LaunchError, has_valid_launch_config, launch_game
 from core.runtime_checks import (
     coletar_alertas_pre_troca,
     contar_arquivos_em_diretorios,
@@ -320,6 +322,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
         hero = ctk.CTkFrame(page, fg_color=SURFACE_PRIMARY, corner_radius=14, border_width=1, border_color=BORDER_COLOR)
         hero.grid(row=0, column=0, sticky="ew", padx=0, pady=(0, 8))
         hero.grid_columnconfigure(0, weight=1)
+        hero.grid_columnconfigure(1, weight=0)
 
         ctk.CTkLabel(
             hero,
@@ -337,6 +340,18 @@ class SaveManagerApp(get_dnd_ctk_base()):
             anchor="w",
         )
         self.home_current_game.grid(row=1, column=0, sticky="ew", padx=18, pady=(0, 10))
+
+        self.home_play_button = ctk.CTkButton(
+            hero,
+            text="Jogar",
+            command=self._play_current_game_placeholder,
+            width=170,
+            height=34,
+            fg_color=ACCENT_COLOR,
+            hover_color=ACCENT_HOVER,
+            state="disabled",
+        )
+        self.home_play_button.grid(row=0, column=1, rowspan=2, sticky="e", padx=(8, 18), pady=14)
 
         shelf = ctk.CTkFrame(page, fg_color=SURFACE_PRIMARY, corner_radius=14, border_width=1, border_color=BORDER_COLOR)
         shelf.grid(row=1, column=0, sticky="nsew")
@@ -1922,6 +1937,8 @@ class SaveManagerApp(get_dnd_ctk_base()):
                 self.game_context_paths.configure(text="Pastas de save vinculadas ao jogo.")
             if hasattr(self, "home_current_game"):
                 self.home_current_game.configure(text="Escolha um jogo na biblioteca para preparar seus saves.")
+            if hasattr(self, "home_play_button"):
+                self.home_play_button.configure(text="Jogar", state="disabled")
             self.play_button.configure(state="disabled")
             self.quick_save_button.configure(state="disabled")
             self.load_profile_button.configure(state="disabled")
@@ -1929,6 +1946,8 @@ class SaveManagerApp(get_dnd_ctk_base()):
             return
 
         paths = paths if paths is not None else obter_diretorios_jogo(self.current_game)
+        launch_config = obter_launch_config_jogo(self.current_game)
+        can_launch = has_valid_launch_config(launch_config)
         initials = "".join(part[:1] for part in self.current_game.split()[:2]).upper() or "JG"
         self.game_panel_title.configure(text=self.current_game)
         self.game_banner_label.configure(text=initials)
@@ -1948,19 +1967,43 @@ class SaveManagerApp(get_dnd_ctk_base()):
             self.game_context_paths.configure(text=f"{len(paths)} pasta(s) de save vinculada(s).")
         if hasattr(self, "home_current_game"):
             self.home_current_game.configure(text=f"{self.current_game} pronto para gerenciar saves.")
-        self.play_button.configure(state="normal")
+        if hasattr(self, "home_play_button"):
+            self.home_play_button.configure(
+                text="Jogar" if can_launch else "Configurar inicialização",
+                state="normal",
+            )
+        self.play_button.configure(
+            text="Jogar" if can_launch else "Configurar inicialização",
+            state="normal",
+        )
         self.quick_save_button.configure(state="normal")
         self.load_profile_button.configure(state="normal")
         self.more_actions_button.configure(state="normal")
 
     def _play_current_game_placeholder(self):
         if not self.current_game:
+            self._set_status("Abra um jogo antes de clicar em Jogar.", "info")
             return
 
-        self._set_status(
-            f"Atalho de execução de '{self.current_game}' preparado para uma etapa futura.",
-            "info",
-        )
+        launch_config = obter_launch_config_jogo(self.current_game)
+        if not has_valid_launch_config(launch_config):
+            executable_path = str(launch_config.get("executable_path") or "").strip()
+            if executable_path:
+                self._set_status("Arquivo de inicialização não encontrado.", "error")
+            else:
+                self._set_status("Configure um arquivo de inicialização para este jogo.", "info")
+            self._open_current_game_in_manager()
+            return
+
+        try:
+            self._set_status(f"Iniciando '{self.current_game}'...", "info")
+            launch_game(launch_config)
+        except LaunchCancelled as error:
+            self._set_status(str(error), "info")
+        except (LaunchError, ValueError, OSError) as error:
+            self._set_status(str(error), "error")
+        else:
+            self._set_status(f"'{self.current_game}' iniciado.", "success")
 
     def _refresh_profiles(self):
         for widget in self.profile_list.winfo_children():
@@ -2171,6 +2214,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
             dnd_context=self.dnd_context,
             list_games=lambda: self._get_sorted_games(""),
             get_paths_for_game=obter_diretorios_jogo,
+            get_launch_config_for_game=obter_launch_config_jogo,
             on_save=self._save_game_from_manager,
             on_delete=self._delete_game_from_manager,
         )
@@ -2433,11 +2477,11 @@ class SaveManagerApp(get_dnd_ctk_base()):
     def _after_save_exported(self, export_path):
         self._set_status(f"Save atual exportado para: {export_path}", "success")
 
-    def _save_game_from_manager(self, current_name, new_name, paths):
+    def _save_game_from_manager(self, current_name, new_name, paths, launch_config):
         self._run_operation(
             "Salvando configuração do jogo...",
             f"Jogo '{new_name}' salvo com sucesso.",
-            lambda _progress: salvar_jogo(current_name, new_name, paths),
+            lambda _progress: salvar_jogo(current_name, new_name, paths, launch_config=launch_config),
             on_success=lambda result: self._after_game_saved(result),
             on_error=lambda message: self._show_game_manager_error("Salvar jogo", message),
         )

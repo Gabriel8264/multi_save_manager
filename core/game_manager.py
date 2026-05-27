@@ -2,6 +2,11 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from .launch_manager import (
+    launch_config_to_dict,
+    normalize_launch_config,
+    validate_launch_config,
+)
 from .config_manager import (
     adicionar_jogo,
     atualizar_jogo,
@@ -36,6 +41,9 @@ class GameLibraryItem:
     favorite: bool = False
     cover_path: str = ""
     banner_path: str = ""
+    executable_path: str = ""
+    launch_arguments: str = ""
+    launch_as_admin: bool = False
 
 
 def _carregar_metadados_biblioteca():
@@ -55,16 +63,33 @@ def _carregar_metadados_biblioteca():
     return jogos
 
 
+def _salvar_metadados_biblioteca(metadados):
+    LIBRARY_FILE.write_text(
+        json.dumps({"games": metadados}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
 def _obter_metadados_jogo(jogo, metadados=None):
     metadados = metadados if metadados is not None else _carregar_metadados_biblioteca()
     dados_jogo = metadados.get(jogo, {})
     if not isinstance(dados_jogo, dict):
-        return {"cover_path": "", "banner_path": ""}
+        dados_jogo = {}
+
+    launch_config = normalize_launch_config(dados_jogo)
 
     return {
         "cover_path": str(dados_jogo.get("cover_path") or ""),
         "banner_path": str(dados_jogo.get("banner_path") or ""),
+        "executable_path": launch_config.executable_path,
+        "launch_arguments": launch_config.launch_arguments,
+        "launch_as_admin": launch_config.launch_as_admin,
     }
+
+
+def obter_launch_config_jogo(jogo):
+    validate_game_name(jogo)
+    return launch_config_to_dict(_obter_metadados_jogo(jogo))
 
 
 def listar_jogos_biblioteca(query=""):
@@ -86,6 +111,9 @@ def listar_jogos_biblioteca(query=""):
                 favorite=nome in favoritos,
                 cover_path=dados_visuais["cover_path"],
                 banner_path=dados_visuais["banner_path"],
+                executable_path=dados_visuais["executable_path"],
+                launch_arguments=dados_visuais["launch_arguments"],
+                launch_as_admin=dados_visuais["launch_as_admin"],
             )
         )
 
@@ -110,12 +138,15 @@ def alternar_favorito_jogo(jogo):
     return alternar_favorito(jogo)
 
 
-def salvar_jogo(nome_atual, novo_nome, diretorios):
+def salvar_jogo(nome_atual, novo_nome, diretorios, launch_config=None):
     novo_nome = validate_game_name(novo_nome)
     diretorios = validate_save_paths(diretorios)
+    launch_config = validate_launch_config(launch_config)
 
     if not nome_atual:
-        return adicionar_jogo(novo_nome, diretorios)
+        adicionado = adicionar_jogo(novo_nome, diretorios)
+        _salvar_launch_config_jogo("", novo_nome, launch_config)
+        return adicionado
 
     nome_atual = validate_game_name(nome_atual)
     jogos = listar_jogos()
@@ -157,11 +188,32 @@ def salvar_jogo(nome_atual, novo_nome, diretorios):
                 pass
         raise
 
+    _salvar_launch_config_jogo(nome_atual, novo_nome, launch_config)
     return atualizado
+
+
+def _salvar_launch_config_jogo(nome_atual, novo_nome, launch_config):
+    metadados = _carregar_metadados_biblioteca()
+    dados = {}
+    if nome_atual:
+        dados = metadados.pop(nome_atual, {})
+        if not isinstance(dados, dict):
+            dados = {}
+    elif novo_nome in metadados and isinstance(metadados.get(novo_nome), dict):
+        dados = metadados[novo_nome]
+
+    dados.update(launch_config_to_dict(launch_config))
+    metadados[novo_nome] = dados
+    _salvar_metadados_biblioteca(metadados)
 
 
 def excluir_jogo_com_dados(jogo, progress_callback=None):
     excluir_jogo_dos_perfis(jogo, progress_callback=progress_callback)
     remover_jogo_dos_favoritos(jogo)
     remover_jogo_dos_recentes(jogo)
-    return excluir_jogo(jogo)
+    excluido = excluir_jogo(jogo)
+    metadados = _carregar_metadados_biblioteca()
+    if jogo in metadados:
+        metadados.pop(jogo, None)
+        _salvar_metadados_biblioteca(metadados)
+    return excluido

@@ -1,6 +1,8 @@
 ﻿import tkinter.messagebox as messagebox
 
 import customtkinter as ctk
+import tkinter.filedialog as filedialog
+from pathlib import Path
 
 from app_ui.dnd_support import register_drop_target_tree
 from app_ui.theme import (
@@ -14,6 +16,7 @@ from app_ui.theme import (
     TEXT_SECONDARY,
 )
 from app_ui.widgets import PathListEditor, ValidatedEntry
+from core.launch_manager import validate_launch_config
 from core.validators import validate_game_name
 
 
@@ -24,6 +27,7 @@ class GameManagerWindow(ctk.CTkToplevel):
         dnd_context,
         list_games,
         get_paths_for_game,
+        get_launch_config_for_game,
         on_save,
         on_delete,
     ):
@@ -34,6 +38,7 @@ class GameManagerWindow(ctk.CTkToplevel):
         self.dnd_context = dnd_context
         self.list_games = list_games
         self.get_paths_for_game = get_paths_for_game
+        self.get_launch_config_for_game = get_launch_config_for_game
         self.on_save = on_save
         self.on_delete = on_delete
         self.selected_game = None
@@ -276,9 +281,10 @@ class GameManagerWindow(ctk.CTkToplevel):
         self.right_panel.grid(row=0, column=1, sticky="nsew", padx=(7, 0), pady=0)
         self.right_panel.grid_columnconfigure(0, weight=1)
         self.right_panel.grid_rowconfigure(2, weight=0)
-        self.right_panel.grid_rowconfigure(3, weight=1)
-        self.right_panel.grid_rowconfigure(4, weight=0)
+        self.right_panel.grid_rowconfigure(3, weight=0)
+        self.right_panel.grid_rowconfigure(4, weight=1)
         self.right_panel.grid_rowconfigure(5, weight=0)
+        self.right_panel.grid_rowconfigure(6, weight=0)
 
         self.editor_header = ctk.CTkFrame(self.right_panel, fg_color="transparent")
         self.editor_header.grid(row=0, column=0, sticky="ew", padx=18, pady=(14, 8))
@@ -348,14 +354,107 @@ class GameManagerWindow(ctk.CTkToplevel):
         self.name_field.entry.configure(height=36)
         self.name_field.error_label.configure(wraplength=480)
 
+        self.launch_card = ctk.CTkFrame(
+            self.right_panel,
+            fg_color=SURFACE_PRIMARY,
+            corner_radius=14,
+            border_width=1,
+            border_color=BORDER_COLOR,
+        )
+        self.launch_card.grid(row=3, column=0, sticky="ew", padx=18, pady=(0, 6))
+        self.launch_card.grid_columnconfigure(0, weight=1)
+        self.launch_card.grid_columnconfigure(1, weight=0)
+
+        ctk.CTkLabel(
+            self.launch_card,
+            text="Inicialização",
+            font=("Segoe UI Semibold", 14),
+            text_color=TEXT_PRIMARY,
+            anchor="w",
+        ).grid(row=0, column=0, columnspan=3, sticky="ew", padx=12, pady=(10, 2))
+
+        ctk.CTkLabel(
+            self.launch_card,
+            text="Arquivo .exe ou .bat usado pelo botão Jogar.",
+            font=("Segoe UI", 11),
+            text_color=TEXT_SECONDARY,
+            anchor="w",
+        ).grid(row=1, column=0, columnspan=3, sticky="ew", padx=12, pady=(0, 6))
+
+        self.launch_path_label = ctk.CTkLabel(
+            self.launch_card,
+            text="Nenhum arquivo configurado.",
+            font=("Segoe UI", 11),
+            text_color=TEXT_SECONDARY,
+            anchor="w",
+        )
+        self.launch_path_label.grid(row=2, column=0, sticky="ew", padx=12, pady=(0, 8))
+
+        self.launch_select_button = ctk.CTkButton(
+            self.launch_card,
+            text="Selecionar arquivo",
+            command=self._select_launch_file,
+            width=132,
+            height=30,
+            fg_color=ACCENT_COLOR,
+            hover_color=ACCENT_HOVER,
+        )
+        self.launch_select_button.grid(row=2, column=1, sticky="e", padx=(8, 4), pady=(0, 8))
+
+        self.launch_clear_button = ctk.CTkButton(
+            self.launch_card,
+            text="Remover",
+            command=self._clear_launch_file,
+            width=78,
+            height=30,
+            fg_color=SURFACE_SECONDARY,
+            hover_color=SURFACE_TERTIARY,
+            text_color=TEXT_PRIMARY,
+            border_width=1,
+            border_color=BORDER_COLOR,
+        )
+        self.launch_clear_button.grid(row=2, column=2, sticky="e", padx=(4, 12), pady=(0, 8))
+
+        self.launch_arguments_entry = ctk.CTkEntry(
+            self.launch_card,
+            placeholder_text='Argumentos de inicialização (opcional)',
+            height=32,
+            corner_radius=10,
+            fg_color=SURFACE_SECONDARY,
+            border_color=BORDER_COLOR,
+            text_color=TEXT_PRIMARY,
+        )
+        self.launch_arguments_entry.grid(row=3, column=0, columnspan=3, sticky="ew", padx=12, pady=(0, 8))
+
+        self.launch_admin_var = ctk.BooleanVar(value=False)
+        self.launch_admin_checkbox = ctk.CTkCheckBox(
+            self.launch_card,
+            text="Executar como administrador",
+            variable=self.launch_admin_var,
+            text_color=TEXT_SECONDARY,
+            checkbox_width=18,
+            checkbox_height=18,
+        )
+        self.launch_admin_checkbox.grid(row=4, column=0, columnspan=3, sticky="w", padx=12, pady=(0, 4))
+
+        ctk.CTkLabel(
+            self.launch_card,
+            text="Use apenas se o jogo, mod, .bat ou launcher externo precisar de permissão elevada.",
+            font=("Segoe UI", 10),
+            text_color=TEXT_SECONDARY,
+            anchor="w",
+        ).grid(row=5, column=0, columnspan=3, sticky="ew", padx=12, pady=(0, 10))
+
+        self.launch_file_path = ""
+
         self.paths_editor = PathListEditor(
             self.right_panel,
             dnd_context=self.dnd_context,
-            textbox_height=132,
+            textbox_height=104,
             dialog_parent=self,
             on_validation_change=self._handle_field_validation_change,
         )
-        self.paths_editor.grid(row=3, column=0, sticky="nsew", padx=18, pady=(0, 6))
+        self.paths_editor.grid(row=4, column=0, sticky="nsew", padx=18, pady=(0, 6))
         self.name_field.entry.bind(
             "<KeyRelease>",
             lambda _event: self.after_idle(self._refresh_validation_status),
@@ -375,10 +474,10 @@ class GameManagerWindow(ctk.CTkToplevel):
             anchor="w",
             justify="left",
         )
-        self.status_label.grid(row=4, column=0, sticky="ew", padx=18, pady=(2, 8))
+        self.status_label.grid(row=5, column=0, sticky="ew", padx=18, pady=(2, 8))
 
         self.button_row = ctk.CTkFrame(self.right_panel, fg_color="transparent")
-        self.button_row.grid(row=5, column=0, sticky="ew", padx=18, pady=(0, 14))
+        self.button_row.grid(row=6, column=0, sticky="ew", padx=18, pady=(0, 14))
         self.button_row.grid_columnconfigure(0, weight=1)
         self.button_row.grid_columnconfigure(1, weight=1)
 
@@ -449,6 +548,7 @@ class GameManagerWindow(ctk.CTkToplevel):
         self.selected_game = game
         self.name_field.set(game)
         self.paths_editor.set_paths(self.get_paths_for_game(game))
+        self._set_launch_config(self.get_launch_config_for_game(game))
         self.paths_editor.validate(show_error=True)
         self.title_label.configure(text="Editar jogo")
         self.game_visual_label.configure(text=self._game_initials(game), text_color=TEXT_PRIMARY)
@@ -465,6 +565,7 @@ class GameManagerWindow(ctk.CTkToplevel):
         self.selected_game = None
         self.name_field.clear()
         self.paths_editor.set_paths([])
+        self._set_launch_config({})
         self.paths_editor.clear_feedback()
         self.title_label.configure(text="Adicionar jogo")
         self.game_visual_label.configure(text="+", text_color=ACCENT_COLOR)
@@ -485,6 +586,55 @@ class GameManagerWindow(ctk.CTkToplevel):
         return "".join(part[0] for part in parts[:2]).upper()
 
     def _handle_field_validation_change(self, _valid):
+        self._refresh_validation_status()
+
+    def _set_launch_config(self, config):
+        config = config or {}
+        self.launch_file_path = str(config.get("executable_path") or "")
+        self.launch_arguments_entry.delete(0, "end")
+        self.launch_arguments_entry.insert(0, str(config.get("launch_arguments") or ""))
+        self.launch_admin_var.set(bool(config.get("launch_as_admin", False)))
+        self._refresh_launch_label()
+
+    def _get_launch_config(self):
+        return {
+            "executable_path": self.launch_file_path,
+            "launch_arguments": self.launch_arguments_entry.get(),
+            "launch_as_admin": bool(self.launch_admin_var.get()),
+        }
+
+    def _refresh_launch_label(self):
+        if self.launch_file_path:
+            self.launch_path_label.configure(text=self.launch_file_path, text_color=TEXT_PRIMARY)
+        else:
+            self.launch_path_label.configure(text="Nenhum arquivo configurado.", text_color=TEXT_SECONDARY)
+
+    def _select_launch_file(self):
+        file_path = filedialog.askopenfilename(
+            parent=self,
+            title="Selecionar arquivo de inicialização",
+            filetypes=[
+                ("Arquivos de inicialização", "*.exe *.bat"),
+                ("Executáveis", "*.exe"),
+                ("Arquivos BAT", "*.bat"),
+            ],
+        )
+        if not file_path:
+            return
+
+        try:
+            validate_launch_config({"executable_path": file_path})
+        except ValueError as error:
+            self.status_label.configure(text=str(error), text_color=("#dc2626", "#f87171"))
+            return
+
+        self.launch_file_path = str(Path(file_path))
+        self._refresh_launch_label()
+        self._refresh_validation_status()
+
+    def _clear_launch_file(self):
+        self.launch_file_path = ""
+        self._refresh_launch_label()
         self._refresh_validation_status()
 
     def _refresh_validation_status(self):
@@ -519,6 +669,11 @@ class GameManagerWindow(ctk.CTkToplevel):
     def save_game(self):
         valid_name = self.name_field.validate(show_error=True)
         valid_paths = self.paths_editor.validate(show_error=True)
+        try:
+            launch_config = validate_launch_config(self._get_launch_config())
+        except ValueError as error:
+            self.status_label.configure(text=str(error), text_color=("#dc2626", "#f87171"))
+            return
 
         if not (valid_name and valid_paths):
             self.status_label.configure(
@@ -531,6 +686,7 @@ class GameManagerWindow(ctk.CTkToplevel):
             self.selected_game,
             self.name_field.get(),
             self.paths_editor.get_paths(),
+            launch_config.__dict__,
         )
 
     def delete_game(self):
@@ -560,6 +716,10 @@ class GameManagerWindow(ctk.CTkToplevel):
         self.paths_editor.textbox.configure(state=state)
         self.paths_editor.add_button.configure(state=state)
         self.paths_editor.open_button.configure(state=state)
+        self.launch_select_button.configure(state=state)
+        self.launch_clear_button.configure(state=state)
+        self.launch_arguments_entry.configure(state=state)
+        self.launch_admin_checkbox.configure(state=state)
         self.new_button.configure(state=state)
         self.save_button.configure(state=state)
         self.delete_button.configure(state=state if self.selected_game else "disabled")
