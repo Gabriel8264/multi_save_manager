@@ -276,6 +276,8 @@ class SaveManagerApp(get_dnd_ctk_base()):
             )
 
         self.pages[page_name].tkraise()
+        if page_name == "home":
+            self._refresh_home_shelves()
 
     def _build_home_page(self):
         if self._page_built.get("home"):
