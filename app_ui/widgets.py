@@ -159,15 +159,15 @@ class GameLibraryCard(ctk.CTkFrame):
         compact=False,
     ):
         border_color = ACCENT_COLOR if selected else BORDER_COLOR
-        width = 146 if compact else 184
-        height = 118 if compact else 130
+        width = 146 if compact else 138
+        height = 118 if compact else 218
         super().__init__(
             master,
             width=width,
             height=height,
-            fg_color=SURFACE_PRIMARY,
-            corner_radius=12,
-            border_width=2 if selected else 1,
+            fg_color=SURFACE_PRIMARY if compact else SURFACE_SECONDARY,
+            corner_radius=10 if compact else 8,
+            border_width=2 if selected else (1 if compact else 0),
             border_color=border_color,
         )
         self.game = game
@@ -182,11 +182,14 @@ class GameLibraryCard(ctk.CTkFrame):
         self.placeholder_label = None
         self.details_label = None
         self.status_label = None
+        self.body = None
+        self.hovered = False
         self.grid_propagate(False)
         self.grid_columnconfigure(0, weight=1)
 
         self._bind_click(self)
         self._bind_open(self)
+        self._bind_hover(self)
         self._build_media(selected)
         self._build_details(selected)
 
@@ -196,30 +199,46 @@ class GameLibraryCard(ctk.CTkFrame):
     def _bind_open(self, widget):
         widget.bind("<Double-Button-1>", self._handle_open)
 
+    def _bind_hover(self, widget):
+        widget.bind("<Enter>", self._handle_enter)
+        widget.bind("<Leave>", self._handle_leave)
+
     def _build_media(self, selected):
-        media_height = 54 if self.compact else 62
-        image_size = (128, 54) if self.compact else (168, 62)
+        media_height = 54 if self.compact else 174
+        image_size = (128, 54) if self.compact else (126, 174)
         media = ctk.CTkFrame(
             self,
             height=media_height,
             fg_color=SURFACE_TERTIARY,
-            corner_radius=12,
+            corner_radius=9 if self.compact else 8,
             border_width=0,
         )
-        media.grid(row=0, column=0, sticky="ew", padx=7, pady=(7, 5))
+        media.grid(
+            row=0,
+            column=0,
+            sticky="ew",
+            padx=7 if self.compact else 4,
+            pady=(7 if self.compact else 4, 0),
+        )
         media.grid_propagate(False)
         media.grid_columnconfigure(0, weight=1)
         media.grid_rowconfigure(0, weight=1)
         self._bind_click(media)
         self._bind_open(media)
+        self._bind_hover(media)
 
-        image = _load_ctk_image(self.game.banner_path or self.game.cover_path, image_size)
+        if self.compact:
+            image_source = self.game.banner_path or self.game.cover_path
+        else:
+            image_source = self.game.cover_path or self.game.banner_path
+        image = _load_ctk_image(image_source, image_size)
         if image:
             image_label = ctk.CTkLabel(media, text="", image=image)
             image_label.image = image
             image_label.grid(row=0, column=0, sticky="nsew")
             self._bind_click(image_label)
             self._bind_open(image_label)
+            self._bind_hover(image_label)
             self._build_favorite_button(media)
             return
 
@@ -227,13 +246,14 @@ class GameLibraryCard(ctk.CTkFrame):
         placeholder = ctk.CTkLabel(
             media,
             text=initials,
-            font=("Segoe UI Bold", 16 if self.compact else 20),
+            font=("Segoe UI Bold", 16 if self.compact else 24),
             text_color=ACCENT_COLOR if selected else TEXT_SECONDARY,
         )
         self.placeholder_label = placeholder
         placeholder.grid(row=0, column=0, sticky="nsew")
         self._bind_click(placeholder)
         self._bind_open(placeholder)
+        self._bind_hover(placeholder)
         self._build_favorite_button(media)
 
     def _build_favorite_button(self, master):
@@ -249,18 +269,40 @@ class GameLibraryCard(ctk.CTkFrame):
         )
         self.favorite_button.grid(row=0, column=0, sticky="ne", padx=5, pady=4)
         self.favorite_button.bind("<Button-1>", self._handle_favorite)
+        self._bind_hover(self.favorite_button)
 
     def _build_details(self, selected):
-        title = ctk.CTkLabel(
+        body = ctk.CTkFrame(
             self,
+            fg_color=SURFACE_PRIMARY if self.compact else "transparent",
+            corner_radius=9,
+            border_width=0,
+        )
+        self.body = body
+        body.grid(
+            row=1,
+            column=0,
+            sticky="nsew",
+            padx=7 if self.compact else 4,
+            pady=(0, 7 if self.compact else 4),
+        )
+        body.grid_columnconfigure(0, weight=1)
+        self._bind_click(body)
+        self._bind_open(body)
+        self._bind_hover(body)
+
+        title = ctk.CTkLabel(
+            body,
             text=self.game.name,
-            font=("Segoe UI Semibold", 11 if self.compact else 12),
+            font=("Segoe UI Semibold", 11 if self.compact else 11),
             text_color=TEXT_PRIMARY,
             anchor="w",
+            wraplength=126 if self.compact else 126,
         )
-        title.grid(row=1, column=0, sticky="ew", padx=8)
+        title.grid(row=0, column=0, sticky="ew", padx=3, pady=(6 if self.compact else 4, 0))
         self._bind_click(title)
         self._bind_open(title)
+        self._bind_hover(title)
 
         save_count = self.profile_count if self.profile_count is not None else len(self.game.save_paths)
         status_text = "Selecionado" if selected else ("Favorito" if self.favorite else "Pronto")
@@ -269,38 +311,24 @@ class GameLibraryCard(ctk.CTkFrame):
             details_text = f"{details_text} · {status_text}"
 
         details = ctk.CTkLabel(
-            self,
+            body,
             text=details_text,
-            font=("Segoe UI", 9 if self.compact else 10),
+            font=("Segoe UI", 9),
             text_color=ACCENT_COLOR if selected and self.compact else TEXT_SECONDARY,
             anchor="w",
         )
         self.details_label = details
-        details.grid(row=2, column=0, sticky="ew", padx=8, pady=(1, 6 if self.compact else 0))
+        details.grid(row=1, column=0, sticky="ew", padx=3, pady=(1, 5 if self.compact else 0))
         self._bind_click(details)
         self._bind_open(details)
+        self._bind_hover(details)
 
         if self.compact:
             return
 
-        status = ctk.CTkLabel(
-            self,
-            text=status_text,
-            font=("Segoe UI Semibold", 9 if self.compact else 10),
-            text_color=ACCENT_COLOR if selected or self.favorite else TEXT_SECONDARY,
-            anchor="w",
-        )
-        self.status_label = status
-        status.grid(row=3, column=0, sticky="ew", padx=9, pady=(0, 6))
-        self._bind_click(status)
-        self._bind_open(status)
-
     def set_selected(self, selected):
         self.selected = selected
-        self.configure(
-            border_width=2 if selected else 1,
-            border_color=ACCENT_COLOR if selected else BORDER_COLOR,
-        )
+        self._apply_visual_state()
 
         if self.placeholder_label:
             self.placeholder_label.configure(text_color=ACCENT_COLOR if selected else TEXT_SECONDARY)
@@ -341,6 +369,29 @@ class GameLibraryCard(ctk.CTkFrame):
         else:
             self.on_select(self.game.name)
 
+    def _handle_enter(self, _event=None):
+        self.hovered = True
+        self._apply_visual_state()
+
+    def _handle_leave(self, _event=None):
+        self.hovered = False
+        self._apply_visual_state()
+
+    def _apply_visual_state(self):
+        if self.compact:
+            self.configure(
+                border_width=2 if self.selected else 1,
+                border_color=ACCENT_COLOR if self.selected else BORDER_COLOR,
+            )
+            return
+
+        if self.selected:
+            self.configure(fg_color=SURFACE_SECONDARY, border_width=2, border_color=ACCENT_COLOR)
+        elif self.hovered:
+            self.configure(fg_color=SURFACE_SECONDARY, border_width=1, border_color=BORDER_COLOR)
+        else:
+            self.configure(fg_color=SURFACE_SECONDARY, border_width=0, border_color=SURFACE_SECONDARY)
+
     def _handle_favorite(self, _event=None):
         if self.on_favorite:
             self.on_favorite(self.game.name)
@@ -351,11 +402,11 @@ class GameLibraryListItem(ctk.CTkFrame):
     def __init__(self, master, game, selected, on_select, on_open=None, on_favorite=None, profile_count=None):
         super().__init__(
             master,
-            height=46,
-            fg_color=SURFACE_TERTIARY if selected else SURFACE_PRIMARY,
+            height=40,
+            fg_color=SURFACE_TERTIARY if selected else SURFACE_SECONDARY,
             corner_radius=8,
             border_width=1,
-            border_color=ACCENT_COLOR if selected else BORDER_COLOR,
+            border_color=ACCENT_COLOR if selected else SURFACE_SECONDARY,
         )
         self.game = game
         self.on_select = on_select
@@ -364,78 +415,73 @@ class GameLibraryListItem(ctk.CTkFrame):
         self.profile_count = profile_count
         self.selected = selected
         self.favorite = game.favorite
+        self.hovered = False
         self.grid_propagate(False)
         self.grid_columnconfigure(1, weight=1)
 
         self._bind_click(self)
         self._bind_open(self)
+        self._bind_hover(self)
 
         self.icon = ctk.CTkFrame(
             self,
-            width=30,
-            height=30,
-            fg_color=SURFACE_SECONDARY,
-            corner_radius=8,
-            border_width=1,
-            border_color=BORDER_COLOR,
+            width=26,
+            height=26,
+            fg_color=SURFACE_PRIMARY,
+            corner_radius=6,
+            border_width=0,
+            border_color=SURFACE_PRIMARY,
         )
-        self.icon.grid(row=0, column=0, sticky="w", padx=(8, 8), pady=8)
+        self.icon.grid(row=0, column=0, sticky="w", padx=(7, 8), pady=7)
         self.icon.grid_propagate(False)
         self.icon.grid_columnconfigure(0, weight=1)
         self.icon.grid_rowconfigure(0, weight=1)
         self._bind_click(self.icon)
         self._bind_open(self.icon)
+        self._bind_hover(self.icon)
 
         initials = "".join(part[:1] for part in self.game.name.split()[:2]).upper() or "JG"
         self.icon_label = ctk.CTkLabel(
             self.icon,
             text=initials,
-            font=("Segoe UI Bold", 10),
+            font=("Segoe UI Bold", 8),
             text_color=ACCENT_COLOR if selected else TEXT_SECONDARY,
         )
         self.icon_label.grid(row=0, column=0, sticky="nsew")
         self._bind_click(self.icon_label)
         self._bind_open(self.icon_label)
+        self._bind_hover(self.icon_label)
 
         text_stack = ctk.CTkFrame(self, fg_color="transparent")
-        text_stack.grid(row=0, column=1, sticky="ew", pady=5)
+        text_stack.grid(row=0, column=1, sticky="ew", pady=0)
         text_stack.grid_columnconfigure(0, weight=1)
         self._bind_click(text_stack)
         self._bind_open(text_stack)
+        self._bind_hover(text_stack)
 
         self.title_label = ctk.CTkLabel(
             text_stack,
             text=self.game.name,
-            font=("Segoe UI Semibold", 11),
+            font=("Segoe UI Semibold", 10),
             text_color=TEXT_PRIMARY,
             anchor="w",
         )
         self.title_label.grid(row=0, column=0, sticky="ew")
         self._bind_click(self.title_label)
         self._bind_open(self.title_label)
-
-        save_count = self.profile_count if self.profile_count is not None else len(self.game.save_paths)
-        self.meta_label = ctk.CTkLabel(
-            text_stack,
-            text=f"{save_count} save(s)",
-            font=("Segoe UI", 9),
-            text_color=TEXT_SECONDARY,
-            anchor="w",
-        )
-        self.meta_label.grid(row=1, column=0, sticky="ew", pady=(1, 0))
-        self._bind_click(self.meta_label)
-        self._bind_open(self.meta_label)
+        self._bind_hover(self.title_label)
 
         self.favorite_button = ctk.CTkLabel(
             self,
             text="★" if self.favorite else "☆",
-            width=24,
-            height=24,
+            width=22,
+            height=22,
             text_color=WARNING_COLOR if self.favorite else TEXT_SECONDARY,
-            font=("Segoe UI Symbol", 13),
+            font=("Segoe UI Symbol", 12),
         )
-        self.favorite_button.grid(row=0, column=2, sticky="e", padx=(6, 8))
+        self.favorite_button.grid(row=0, column=2, sticky="e", padx=(5, 7))
         self.favorite_button.bind("<Button-1>", self._handle_favorite)
+        self._bind_hover(self.favorite_button)
 
     def _bind_click(self, widget):
         widget.bind("<Button-1>", self._handle_click)
@@ -443,12 +489,13 @@ class GameLibraryListItem(ctk.CTkFrame):
     def _bind_open(self, widget):
         widget.bind("<Double-Button-1>", self._handle_open)
 
+    def _bind_hover(self, widget):
+        widget.bind("<Enter>", self._handle_enter)
+        widget.bind("<Leave>", self._handle_leave)
+
     def set_selected(self, selected):
         self.selected = selected
-        self.configure(
-            fg_color=SURFACE_TERTIARY if selected else SURFACE_PRIMARY,
-            border_color=ACCENT_COLOR if selected else BORDER_COLOR,
-        )
+        self._apply_visual_state()
         self.icon_label.configure(text_color=ACCENT_COLOR if selected else TEXT_SECONDARY)
 
     def set_favorite(self, favorite):
@@ -466,6 +513,22 @@ class GameLibraryListItem(ctk.CTkFrame):
             self.on_open(self.game.name)
         else:
             self.on_select(self.game.name)
+
+    def _handle_enter(self, _event=None):
+        self.hovered = True
+        self._apply_visual_state()
+
+    def _handle_leave(self, _event=None):
+        self.hovered = False
+        self._apply_visual_state()
+
+    def _apply_visual_state(self):
+        if self.selected:
+            self.configure(fg_color=SURFACE_TERTIARY, border_color=ACCENT_COLOR)
+        elif self.hovered:
+            self.configure(fg_color=SURFACE_TERTIARY, border_color=BORDER_COLOR)
+        else:
+            self.configure(fg_color=SURFACE_SECONDARY, border_color=SURFACE_SECONDARY)
 
     def _handle_favorite(self, _event=None):
         if self.on_favorite:

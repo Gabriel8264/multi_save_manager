@@ -32,7 +32,7 @@ def get_current_user():
 
     return LocalUser(
         id=str(user_data.get("id") or current_user_id),
-        display_name=str(user_data.get("display_name") or "Usuario local"),
+        display_name=str(user_data.get("display_name") or "Usuário local"),
         role=str(user_data.get("role") or "manager"),
         permission_profile=str(user_data.get("permission_profile") or "manager"),
     )

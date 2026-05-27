@@ -369,7 +369,7 @@ class GameManagerWindow(ctk.CTkToplevel):
 
         self.status_label = ctk.CTkLabel(
             self.right_panel,
-            text="Preencha os dados do jogo e salve as alteracoes.",
+            text="Preencha os dados do jogo e salve as alterações.",
             font=("Segoe UI", 12),
             text_color=TEXT_SECONDARY,
             anchor="w",
@@ -512,7 +512,7 @@ class GameManagerWindow(ctk.CTkToplevel):
         for game, button in self.game_buttons.items():
             selected = game == self.selected_game
             button.configure(
-                fg_color=("#dbeafe", "#1d4ed8") if selected else SURFACE_PRIMARY,
+                fg_color=ACCENT_COLOR if selected else SURFACE_PRIMARY,
                 text_color=TEXT_PRIMARY,
             )
 
@@ -541,7 +541,7 @@ class GameManagerWindow(ctk.CTkToplevel):
             "Excluir jogo",
             (
                 f"Deseja excluir o jogo '{self.selected_game}'?\n\n"
-                "Os perfis salvos e as configuracoes desse jogo tambem serao removidos."
+                "Os perfis salvos e as configurações desse jogo também serão removidos."
             ),
             parent=self,
         )

@@ -120,10 +120,10 @@ def salvar_jogo(nome_atual, novo_nome, diretorios):
     nome_atual = validate_game_name(nome_atual)
     jogos = listar_jogos()
     if nome_atual not in jogos:
-        raise FileNotFoundError("Jogo nao encontrado.")
+        raise FileNotFoundError("Jogo não encontrado.")
 
     if nome_atual != novo_nome and novo_nome in jogos:
-        raise FileExistsError("Ja existe um jogo com esse nome.")
+        raise FileExistsError("Já existe um jogo com esse nome.")
 
     diretorios_anteriores = obter_diretorios_jogo(nome_atual)
 

@@ -24,7 +24,7 @@ def _prepare_desktop_runtime():
     try:
         if ctypes.windll.shell32.IsUserAnAdmin():
             print(
-                "[Multiple Save Manager] Aviso: o app esta rodando como administrador. "
+                "[Multiple Save Manager] Aviso: o app está rodando como administrador. "
                 "O Windows pode bloquear drag and drop vindo do Explorer normal."
             )
     except Exception:

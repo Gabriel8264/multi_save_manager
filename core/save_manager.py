@@ -295,12 +295,12 @@ def carregar_perfil(jogo, perfil, progress_callback=None):
             _restore_save_backups(save_paths, backup_paths)
         except Exception as rollback_error:
             raise RuntimeError(
-                "Falha ao carregar o perfil e a recuperacao automatica tambem falhou. "
-                f"Backup temporario preservado em: {backup_root}"
+                "Falha ao carregar o perfil e a recuperação automática também falhou. "
+                f"Backup temporário preservado em: {backup_root}"
             ) from rollback_error
         raise RuntimeError(
             "Falha ao carregar o perfil. Os saves reais foram restaurados a partir "
-            "do backup temporario."
+            "do backup temporário."
         ) from restore_error
     finally:
         shutil.rmtree(backup_root, ignore_errors=True)

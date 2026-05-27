@@ -29,7 +29,7 @@ PLAYER_PERMISSIONS = {
 }
 DEFAULT_LOCAL_USER = {
     "id": DEFAULT_CURRENT_USER_ID,
-    "display_name": "Usuario local",
+    "display_name": "Usuário local",
     "role": "manager",
     "permission_profile": "manager",
 }
