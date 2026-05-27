@@ -23,7 +23,7 @@ from app_ui.theme import (
     WARNING_COLOR,
     apply_theme,
 )
-from app_ui.widgets import BusyOverlay, GameLibraryCard, ProfileCard
+from app_ui.widgets import BusyOverlay, GameLibraryCard, GameLibraryListItem, ProfileCard
 from core.config_manager import obter_diretorios_jogo
 from core.game_manager import (
     alternar_favorito_jogo,
@@ -167,11 +167,12 @@ class SaveManagerApp(get_dnd_ctk_base()):
             corner_radius=18,
             border_width=1,
             border_color=BORDER_COLOR,
-            width=96,
+            width=250,
         )
         self.nav_rail.grid(row=0, column=0, sticky="ns", padx=(0, 12))
         self.nav_rail.grid_propagate(False)
         self.nav_rail.grid_columnconfigure(0, weight=1)
+        self.nav_rail.grid_rowconfigure(5, weight=1)
         self._build_navigation()
 
         self.left_panel = ctk.CTkFrame(
@@ -375,12 +376,11 @@ class SaveManagerApp(get_dnd_ctk_base()):
             border_color=BORDER_COLOR,
         )
         self.game_card.grid(row=0, column=0, sticky="nsew")
-        self.game_card.grid_columnconfigure(0, weight=2)
-        self.game_card.grid_columnconfigure(1, weight=3)
+        self.game_card.grid_columnconfigure(0, weight=1)
         self.game_card.grid_rowconfigure(0, weight=1)
 
-        self.library_list_panel = ctk.CTkFrame(self.game_card, fg_color="transparent")
-        self.library_list_panel.grid(row=0, column=0, sticky="nsew", padx=(16, 8), pady=16)
+        self.library_list_panel = ctk.CTkFrame(self.nav_rail, fg_color="transparent")
+        self.library_list_panel.grid(row=5, column=0, sticky="nsew", padx=10, pady=(16, 10))
         self.library_list_panel.grid_columnconfigure(0, weight=1)
         self.library_list_panel.grid_rowconfigure(2, weight=1)
 
@@ -470,12 +470,11 @@ class SaveManagerApp(get_dnd_ctk_base()):
             border_width=1,
             border_color=BORDER_COLOR,
         )
-        self.manage_games_button.grid(row=0, column=2, sticky="e")
 
         self.library_search = ctk.CTkEntry(
             self.library_list_panel,
-            placeholder_text="Buscar na biblioteca...",
-            height=36,
+            placeholder_text="Buscar jogo...",
+            height=34,
             corner_radius=12,
             fg_color=SURFACE_SECONDARY,
             border_color=BORDER_COLOR,
@@ -486,7 +485,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
 
         self.game_library_frame = ctk.CTkScrollableFrame(
             self.library_list_panel,
-            fg_color=SURFACE_SECONDARY,
+            fg_color="transparent",
             corner_radius=14,
             border_width=0,
         )
@@ -504,10 +503,9 @@ class SaveManagerApp(get_dnd_ctk_base()):
             self.game_card,
             fg_color=SURFACE_SECONDARY,
             corner_radius=16,
-            border_width=1,
-            border_color=BORDER_COLOR,
+            border_width=0,
         )
-        self.library_game_page.grid(row=0, column=1, sticky="nsew", padx=(8, 16), pady=16)
+        self.library_game_page.grid(row=0, column=0, sticky="nsew", padx=16, pady=16)
         self.library_game_page.grid_columnconfigure(0, weight=1)
         self.library_game_page.grid_rowconfigure(1, weight=1)
 
@@ -540,9 +538,9 @@ class SaveManagerApp(get_dnd_ctk_base()):
 
         self.library_game_manage_button = ctk.CTkButton(
             context_top,
-            text="Gerenciar jogo",
-            command=self._open_current_game_in_manager,
-            width=132,
+            text="Gerenciar jogos",
+            command=self._open_library_manage_action,
+            width=138,
             height=34,
             fg_color=SURFACE_SECONDARY,
             hover_color=SURFACE_TERTIARY,
@@ -652,10 +650,9 @@ class SaveManagerApp(get_dnd_ctk_base()):
 
         future = ctk.CTkFrame(
             details,
-            fg_color=SURFACE_SECONDARY,
+            fg_color=SURFACE_PRIMARY,
             corner_radius=14,
-            border_width=1,
-            border_color=BORDER_COLOR,
+            border_width=0,
         )
         future.grid(row=1, column=0, columnspan=2, sticky="nsew", pady=(12, 0))
         future.grid_columnconfigure(0, weight=1)
@@ -673,10 +670,9 @@ class SaveManagerApp(get_dnd_ctk_base()):
     def _build_library_stat_card(self, master, row, column, title, value):
         card = ctk.CTkFrame(
             master,
-            fg_color=SURFACE_SECONDARY,
+            fg_color="transparent",
             corner_radius=14,
-            border_width=1,
-            border_color=BORDER_COLOR,
+            border_width=0,
         )
         card.grid(row=row, column=column, sticky="ew", padx=(0, 6) if column == 0 else (6, 0))
         card.grid_columnconfigure(0, weight=1)
@@ -1358,10 +1354,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self._refresh_quick_actions()
 
     def _get_library_grid_columns(self, width=None):
-        if width is None and hasattr(self, "game_library_frame"):
-            width = self.game_library_frame.winfo_width()
-        width = width or 420
-        return max(1, min(3, int(max(width - 24, 160) // 172)))
+        return 1
 
     def _on_library_grid_resize(self, event=None):
         if not hasattr(self, "game_library_frame"):
@@ -1443,16 +1436,9 @@ class SaveManagerApp(get_dnd_ctk_base()):
                 ).grid(row=2, column=0, sticky="w")
             return
 
-        columns = self._get_library_grid_columns()
-        self._library_grid_columns = columns
-        for column in range(columns):
-            self.game_library_frame.grid_columnconfigure(column, weight=0)
-
         for index, game in enumerate(games):
-            row = index // columns
-            column = index % columns
             profile_count = len(listar_perfis(game.name))
-            card = GameLibraryCard(
+            card = GameLibraryListItem(
                 self.game_library_frame,
                 game=game,
                 selected=game.name == self.current_game,
@@ -1460,9 +1446,8 @@ class SaveManagerApp(get_dnd_ctk_base()):
                 on_open=self._open_game_from_card,
                 on_favorite=self._toggle_favorite_from_card,
                 profile_count=profile_count,
-                compact=True,
             )
-            card.grid(row=row, column=column, sticky="nw", padx=6, pady=6)
+            card.grid(row=index, column=0, sticky="ew", padx=8, pady=(8 if index == 0 else 4, 4))
             self.library_cards[game.name] = card
 
     def _refresh_home_shelves(self):
@@ -1615,6 +1600,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self.library_paths_stat.configure(text=path_status)
         favorite = jogo_eh_favorito(self.current_game)
         self.library_favorite_button.configure(text="Favorito" if favorite else "Favoritar")
+        self.library_game_manage_button.configure(text="Gerenciar jogo")
         self.library_open_paths_button.configure(state="normal" if valid_paths else "disabled")
         self.library_play_button.configure(state="normal")
 
@@ -1628,6 +1614,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self.library_saves_stat.configure(text="0 perfil(is)")
         self.library_paths_stat.configure(text="Nenhuma pasta")
         self.library_favorite_button.configure(text="Favoritar", state="disabled")
+        self.library_game_manage_button.configure(text="Gerenciar jogos")
         self.library_open_paths_button.configure(state="disabled")
         self.library_play_button.configure(state="disabled")
 
@@ -1655,6 +1642,12 @@ class SaveManagerApp(get_dnd_ctk_base()):
 
         self._game_manager_initial_game = self.current_game
         self._open_game_manager()
+
+    def _open_library_manage_action(self):
+        if self.current_game:
+            self._open_current_game_in_manager()
+        else:
+            self._open_game_manager()
 
     def _update_current_game_details(self):
         if not self.current_game:

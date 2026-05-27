@@ -347,6 +347,132 @@ class GameLibraryCard(ctk.CTkFrame):
         return "break"
 
 
+class GameLibraryListItem(ctk.CTkFrame):
+    def __init__(self, master, game, selected, on_select, on_open=None, on_favorite=None, profile_count=None):
+        super().__init__(
+            master,
+            height=58,
+            fg_color=SURFACE_TERTIARY if selected else SURFACE_PRIMARY,
+            corner_radius=10,
+            border_width=1,
+            border_color=ACCENT_COLOR if selected else BORDER_COLOR,
+        )
+        self.game = game
+        self.on_select = on_select
+        self.on_open = on_open
+        self.on_favorite = on_favorite
+        self.profile_count = profile_count
+        self.selected = selected
+        self.favorite = game.favorite
+        self.grid_propagate(False)
+        self.grid_columnconfigure(1, weight=1)
+
+        self._bind_click(self)
+        self._bind_open(self)
+
+        self.icon = ctk.CTkFrame(
+            self,
+            width=36,
+            height=36,
+            fg_color=SURFACE_SECONDARY,
+            corner_radius=8,
+            border_width=1,
+            border_color=BORDER_COLOR,
+        )
+        self.icon.grid(row=0, column=0, sticky="w", padx=(10, 10), pady=10)
+        self.icon.grid_propagate(False)
+        self.icon.grid_columnconfigure(0, weight=1)
+        self.icon.grid_rowconfigure(0, weight=1)
+        self._bind_click(self.icon)
+        self._bind_open(self.icon)
+
+        initials = "".join(part[:1] for part in self.game.name.split()[:2]).upper() or "JG"
+        self.icon_label = ctk.CTkLabel(
+            self.icon,
+            text=initials,
+            font=("Segoe UI Bold", 12),
+            text_color=ACCENT_COLOR if selected else TEXT_SECONDARY,
+        )
+        self.icon_label.grid(row=0, column=0, sticky="nsew")
+        self._bind_click(self.icon_label)
+        self._bind_open(self.icon_label)
+
+        text_stack = ctk.CTkFrame(self, fg_color="transparent")
+        text_stack.grid(row=0, column=1, sticky="ew", pady=8)
+        text_stack.grid_columnconfigure(0, weight=1)
+        self._bind_click(text_stack)
+        self._bind_open(text_stack)
+
+        self.title_label = ctk.CTkLabel(
+            text_stack,
+            text=self.game.name,
+            font=("Segoe UI Semibold", 12),
+            text_color=TEXT_PRIMARY,
+            anchor="w",
+        )
+        self.title_label.grid(row=0, column=0, sticky="ew")
+        self._bind_click(self.title_label)
+        self._bind_open(self.title_label)
+
+        save_count = self.profile_count if self.profile_count is not None else len(self.game.save_paths)
+        self.meta_label = ctk.CTkLabel(
+            text_stack,
+            text=f"{save_count} save(s)",
+            font=("Segoe UI", 10),
+            text_color=TEXT_SECONDARY,
+            anchor="w",
+        )
+        self.meta_label.grid(row=1, column=0, sticky="ew", pady=(1, 0))
+        self._bind_click(self.meta_label)
+        self._bind_open(self.meta_label)
+
+        self.favorite_button = ctk.CTkLabel(
+            self,
+            text="★" if self.favorite else "☆",
+            width=28,
+            height=28,
+            text_color=WARNING_COLOR if self.favorite else TEXT_SECONDARY,
+            font=("Segoe UI Symbol", 15),
+        )
+        self.favorite_button.grid(row=0, column=2, sticky="e", padx=(8, 10))
+        self.favorite_button.bind("<Button-1>", self._handle_favorite)
+
+    def _bind_click(self, widget):
+        widget.bind("<Button-1>", self._handle_click)
+
+    def _bind_open(self, widget):
+        widget.bind("<Double-Button-1>", self._handle_open)
+
+    def set_selected(self, selected):
+        self.selected = selected
+        self.configure(
+            fg_color=SURFACE_TERTIARY if selected else SURFACE_PRIMARY,
+            border_color=ACCENT_COLOR if selected else BORDER_COLOR,
+        )
+        self.icon_label.configure(text_color=ACCENT_COLOR if selected else TEXT_SECONDARY)
+
+    def set_favorite(self, favorite):
+        self.favorite = favorite
+        self.favorite_button.configure(
+            text="★" if favorite else "☆",
+            text_color=WARNING_COLOR if favorite else TEXT_SECONDARY,
+        )
+
+    def _handle_click(self, _event=None):
+        self.on_select(self.game.name)
+
+    def _handle_open(self, _event=None):
+        if self.on_open:
+            self.on_open(self.game.name)
+        else:
+            self.on_select(self.game.name)
+
+    def _handle_favorite(self, _event=None):
+        if self.on_favorite:
+            self.on_favorite(self.game.name)
+        return "break"
+
+
 class PathListEditor(ctk.CTkFrame):
     def __init__(
         self,
