@@ -159,8 +159,8 @@ class GameLibraryCard(ctk.CTkFrame):
         compact=False,
     ):
         border_color = ACCENT_COLOR if selected else BORDER_COLOR
-        width = 156 if compact else 230
-        height = 132 if compact else 154
+        width = 146 if compact else 184
+        height = 118 if compact else 130
         super().__init__(
             master,
             width=width,
@@ -197,8 +197,8 @@ class GameLibraryCard(ctk.CTkFrame):
         widget.bind("<Double-Button-1>", self._handle_open)
 
     def _build_media(self, selected):
-        media_height = 62 if self.compact else 76
-        image_size = (138, 62) if self.compact else (210, 76)
+        media_height = 54 if self.compact else 62
+        image_size = (128, 54) if self.compact else (168, 62)
         media = ctk.CTkFrame(
             self,
             height=media_height,
@@ -206,7 +206,7 @@ class GameLibraryCard(ctk.CTkFrame):
             corner_radius=12,
             border_width=0,
         )
-        media.grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 6))
+        media.grid(row=0, column=0, sticky="ew", padx=7, pady=(7, 5))
         media.grid_propagate(False)
         media.grid_columnconfigure(0, weight=1)
         media.grid_rowconfigure(0, weight=1)
@@ -227,7 +227,7 @@ class GameLibraryCard(ctk.CTkFrame):
         placeholder = ctk.CTkLabel(
             media,
             text=initials,
-            font=("Segoe UI Bold", 18 if self.compact else 24),
+            font=("Segoe UI Bold", 16 if self.compact else 20),
             text_color=ACCENT_COLOR if selected else TEXT_SECONDARY,
         )
         self.placeholder_label = placeholder
@@ -240,25 +240,25 @@ class GameLibraryCard(ctk.CTkFrame):
         self.favorite_button = ctk.CTkLabel(
             master,
             text="★" if self.favorite else "☆",
-            width=24,
-            height=24,
+            width=22,
+            height=22,
             corner_radius=12,
             fg_color=SURFACE_PRIMARY,
             text_color=WARNING_COLOR if self.favorite else TEXT_SECONDARY,
-            font=("Segoe UI Symbol", 15),
+            font=("Segoe UI Symbol", 14),
         )
-        self.favorite_button.grid(row=0, column=0, sticky="ne", padx=6, pady=5)
+        self.favorite_button.grid(row=0, column=0, sticky="ne", padx=5, pady=4)
         self.favorite_button.bind("<Button-1>", self._handle_favorite)
 
     def _build_details(self, selected):
         title = ctk.CTkLabel(
             self,
             text=self.game.name,
-            font=("Segoe UI Semibold", 12 if self.compact else 14),
+            font=("Segoe UI Semibold", 11 if self.compact else 12),
             text_color=TEXT_PRIMARY,
             anchor="w",
         )
-        title.grid(row=1, column=0, sticky="ew", padx=9)
+        title.grid(row=1, column=0, sticky="ew", padx=8)
         self._bind_click(title)
         self._bind_open(title)
 
@@ -271,12 +271,12 @@ class GameLibraryCard(ctk.CTkFrame):
         details = ctk.CTkLabel(
             self,
             text=details_text,
-            font=("Segoe UI", 10 if self.compact else 11),
+            font=("Segoe UI", 9 if self.compact else 10),
             text_color=ACCENT_COLOR if selected and self.compact else TEXT_SECONDARY,
             anchor="w",
         )
         self.details_label = details
-        details.grid(row=2, column=0, sticky="ew", padx=9, pady=(2, 8 if self.compact else 0))
+        details.grid(row=2, column=0, sticky="ew", padx=8, pady=(1, 6 if self.compact else 0))
         self._bind_click(details)
         self._bind_open(details)
 
@@ -351,9 +351,9 @@ class GameLibraryListItem(ctk.CTkFrame):
     def __init__(self, master, game, selected, on_select, on_open=None, on_favorite=None, profile_count=None):
         super().__init__(
             master,
-            height=58,
+            height=46,
             fg_color=SURFACE_TERTIARY if selected else SURFACE_PRIMARY,
-            corner_radius=10,
+            corner_radius=8,
             border_width=1,
             border_color=ACCENT_COLOR if selected else BORDER_COLOR,
         )
@@ -372,14 +372,14 @@ class GameLibraryListItem(ctk.CTkFrame):
 
         self.icon = ctk.CTkFrame(
             self,
-            width=36,
-            height=36,
+            width=30,
+            height=30,
             fg_color=SURFACE_SECONDARY,
             corner_radius=8,
             border_width=1,
             border_color=BORDER_COLOR,
         )
-        self.icon.grid(row=0, column=0, sticky="w", padx=(10, 10), pady=10)
+        self.icon.grid(row=0, column=0, sticky="w", padx=(8, 8), pady=8)
         self.icon.grid_propagate(False)
         self.icon.grid_columnconfigure(0, weight=1)
         self.icon.grid_rowconfigure(0, weight=1)
@@ -390,7 +390,7 @@ class GameLibraryListItem(ctk.CTkFrame):
         self.icon_label = ctk.CTkLabel(
             self.icon,
             text=initials,
-            font=("Segoe UI Bold", 12),
+            font=("Segoe UI Bold", 10),
             text_color=ACCENT_COLOR if selected else TEXT_SECONDARY,
         )
         self.icon_label.grid(row=0, column=0, sticky="nsew")
@@ -398,7 +398,7 @@ class GameLibraryListItem(ctk.CTkFrame):
         self._bind_open(self.icon_label)
 
         text_stack = ctk.CTkFrame(self, fg_color="transparent")
-        text_stack.grid(row=0, column=1, sticky="ew", pady=8)
+        text_stack.grid(row=0, column=1, sticky="ew", pady=5)
         text_stack.grid_columnconfigure(0, weight=1)
         self._bind_click(text_stack)
         self._bind_open(text_stack)
@@ -406,7 +406,7 @@ class GameLibraryListItem(ctk.CTkFrame):
         self.title_label = ctk.CTkLabel(
             text_stack,
             text=self.game.name,
-            font=("Segoe UI Semibold", 12),
+            font=("Segoe UI Semibold", 11),
             text_color=TEXT_PRIMARY,
             anchor="w",
         )
@@ -418,7 +418,7 @@ class GameLibraryListItem(ctk.CTkFrame):
         self.meta_label = ctk.CTkLabel(
             text_stack,
             text=f"{save_count} save(s)",
-            font=("Segoe UI", 10),
+            font=("Segoe UI", 9),
             text_color=TEXT_SECONDARY,
             anchor="w",
         )
@@ -429,12 +429,12 @@ class GameLibraryListItem(ctk.CTkFrame):
         self.favorite_button = ctk.CTkLabel(
             self,
             text="★" if self.favorite else "☆",
-            width=28,
-            height=28,
+            width=24,
+            height=24,
             text_color=WARNING_COLOR if self.favorite else TEXT_SECONDARY,
-            font=("Segoe UI Symbol", 15),
+            font=("Segoe UI Symbol", 13),
         )
-        self.favorite_button.grid(row=0, column=2, sticky="e", padx=(8, 10))
+        self.favorite_button.grid(row=0, column=2, sticky="e", padx=(6, 8))
         self.favorite_button.bind("<Button-1>", self._handle_favorite)
 
     def _bind_click(self, widget):

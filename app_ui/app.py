@@ -105,13 +105,13 @@ class SaveManagerApp(get_dnd_ctk_base()):
             fg_color=SURFACE_SECONDARY,
             corner_radius=0,
         )
-        self.header.grid(row=0, column=0, sticky="ew", padx=20, pady=(14, 8))
+        self.header.grid(row=0, column=0, sticky="ew", padx=14, pady=(8, 4))
         self.header.grid_columnconfigure(0, weight=1)
         self.header.grid_columnconfigure(1, weight=0)
         self.header.grid_columnconfigure(2, weight=0)
 
         title_block = ctk.CTkFrame(self.header, fg_color="transparent")
-        title_block.grid(row=0, column=0, sticky="w", padx=(0, 18), pady=4)
+        title_block.grid(row=0, column=0, sticky="w", padx=(0, 14), pady=2)
 
         self.title_label = ctk.CTkLabel(
             title_block,
@@ -125,7 +125,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self.subtitle_label = ctk.CTkLabel(
             title_block,
             text="Launcher de saves e biblioteca",
-            font=("Segoe UI", 11),
+            font=("Segoe UI", 10),
             text_color=TEXT_SECONDARY,
             anchor="w",
         )
@@ -135,15 +135,15 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self.settings_button = ctk.CTkButton(
             self.header,
             text="Config",
-            width=82,
-            height=38,
+            width=74,
+            height=32,
             fg_color=SURFACE_PRIMARY,
             hover_color=SURFACE_TERTIARY,
             text_color=TEXT_PRIMARY,
             border_width=1,
             border_color=BORDER_COLOR,
         )
-        self.settings_button.grid(row=0, column=1, sticky="e", padx=8, pady=6)
+        self.settings_button.grid(row=0, column=1, sticky="e", padx=6, pady=4)
 
         self.theme_switch = ctk.CTkSwitch(
             self.header,
@@ -151,11 +151,11 @@ class SaveManagerApp(get_dnd_ctk_base()):
             command=self._toggle_theme,
             text_color=TEXT_PRIMARY,
         )
-        self.theme_switch.grid(row=0, column=2, sticky="e", padx=(8, 0), pady=6)
+        self.theme_switch.grid(row=0, column=2, sticky="e", padx=(6, 0), pady=4)
 
     def _build_content(self):
         self.content = ctk.CTkFrame(self, fg_color="transparent")
-        self.content.grid(row=1, column=0, sticky="nsew", padx=20, pady=(8, 20))
+        self.content.grid(row=1, column=0, sticky="nsew", padx=14, pady=(6, 14))
         self.content.grid_columnconfigure(0, weight=0)
         self.content.grid_columnconfigure(1, weight=4)
         self.content.grid_columnconfigure(2, weight=3)
@@ -167,9 +167,9 @@ class SaveManagerApp(get_dnd_ctk_base()):
             corner_radius=18,
             border_width=1,
             border_color=BORDER_COLOR,
-            width=250,
+            width=220,
         )
-        self.nav_rail.grid(row=0, column=0, sticky="ns", padx=(0, 12))
+        self.nav_rail.grid(row=0, column=0, sticky="ns", padx=(0, 10))
         self.nav_rail.grid_propagate(False)
         self.nav_rail.grid_columnconfigure(0, weight=1)
         self.nav_rail.grid_rowconfigure(5, weight=1)
@@ -221,7 +221,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
             button = ctk.CTkButton(
                 self.nav_rail,
                 text=label,
-                height=38,
+                height=32,
                 fg_color=ACCENT_COLOR if active else "transparent",
                 hover_color=SURFACE_TERTIARY,
                 text_color=TEXT_PRIMARY if active else TEXT_SECONDARY,
@@ -229,7 +229,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
                 border_color=BORDER_COLOR,
                 command=lambda page=page_name: self._navigate(page),
             )
-            button.grid(row=index, column=0, sticky="ew", padx=10, pady=(14 if index == 0 else 6, 0))
+            button.grid(row=index, column=0, sticky="ew", padx=8, pady=(10 if index == 0 else 4, 0))
             self.nav_buttons[page_name] = button
 
     def _build_pages(self):
@@ -288,8 +288,8 @@ class SaveManagerApp(get_dnd_ctk_base()):
         page.grid_columnconfigure(0, weight=1)
         page.grid_rowconfigure(1, weight=1)
 
-        hero = ctk.CTkFrame(page, fg_color=SURFACE_PRIMARY, corner_radius=18, border_width=1, border_color=BORDER_COLOR)
-        hero.grid(row=0, column=0, sticky="ew", padx=0, pady=(0, 12))
+        hero = ctk.CTkFrame(page, fg_color=SURFACE_PRIMARY, corner_radius=14, border_width=1, border_color=BORDER_COLOR)
+        hero.grid(row=0, column=0, sticky="ew", padx=0, pady=(0, 8))
         hero.grid_columnconfigure(0, weight=1)
 
         ctk.CTkLabel(
@@ -298,28 +298,28 @@ class SaveManagerApp(get_dnd_ctk_base()):
             font=("Segoe UI Bold", 28),
             text_color=TEXT_PRIMARY,
             anchor="w",
-        ).grid(row=0, column=0, sticky="ew", padx=24, pady=(24, 6))
+        ).grid(row=0, column=0, sticky="ew", padx=18, pady=(16, 4))
 
         self.home_current_game = ctk.CTkLabel(
             hero,
             text="Escolha um jogo na biblioteca para preparar seus saves.",
-            font=("Segoe UI", 14),
+            font=("Segoe UI", 12),
             text_color=TEXT_SECONDARY,
             anchor="w",
         )
-        self.home_current_game.grid(row=1, column=0, sticky="ew", padx=24, pady=(0, 18))
+        self.home_current_game.grid(row=1, column=0, sticky="ew", padx=18, pady=(0, 10))
 
         ctk.CTkButton(
             hero,
             text="Abrir biblioteca",
             command=lambda: self._navigate("library"),
-            width=150,
-            height=40,
+            width=132,
+            height=34,
             fg_color=ACCENT_COLOR,
             hover_color=ACCENT_HOVER,
-        ).grid(row=2, column=0, sticky="w", padx=24, pady=(0, 24))
+        ).grid(row=2, column=0, sticky="w", padx=18, pady=(0, 16))
 
-        shelf = ctk.CTkFrame(page, fg_color=SURFACE_PRIMARY, corner_radius=18, border_width=1, border_color=BORDER_COLOR)
+        shelf = ctk.CTkFrame(page, fg_color=SURFACE_PRIMARY, corner_radius=14, border_width=1, border_color=BORDER_COLOR)
         shelf.grid(row=1, column=0, sticky="nsew")
         shelf.grid_columnconfigure(0, weight=1)
         shelf.grid_rowconfigure(1, weight=1)
@@ -328,36 +328,36 @@ class SaveManagerApp(get_dnd_ctk_base()):
         ctk.CTkLabel(
             shelf,
             text="Favoritos",
-            font=("Segoe UI Semibold", 16),
+            font=("Segoe UI Semibold", 14),
             text_color=TEXT_PRIMARY,
             anchor="w",
-        ).grid(row=0, column=0, sticky="ew", padx=20, pady=(18, 8))
+        ).grid(row=0, column=0, sticky="ew", padx=16, pady=(12, 6))
         self.home_favorites_frame = ctk.CTkScrollableFrame(
             shelf,
             orientation="horizontal",
-            height=188,
+            height=148,
             fg_color=SURFACE_SECONDARY,
-            corner_radius=14,
+            corner_radius=12,
             border_width=0,
         )
-        self.home_favorites_frame.grid(row=1, column=0, sticky="ew", padx=18, pady=(0, 14))
+        self.home_favorites_frame.grid(row=1, column=0, sticky="ew", padx=14, pady=(0, 10))
 
         ctk.CTkLabel(
             shelf,
             text="Recentes",
-            font=("Segoe UI Semibold", 16),
+            font=("Segoe UI Semibold", 14),
             text_color=TEXT_PRIMARY,
             anchor="w",
-        ).grid(row=2, column=0, sticky="ew", padx=20, pady=(0, 8))
+        ).grid(row=2, column=0, sticky="ew", padx=16, pady=(0, 6))
         self.home_recents_frame = ctk.CTkScrollableFrame(
             shelf,
             orientation="horizontal",
-            height=188,
+            height=148,
             fg_color=SURFACE_SECONDARY,
-            corner_radius=14,
+            corner_radius=12,
             border_width=0,
         )
-        self.home_recents_frame.grid(row=3, column=0, sticky="ew", padx=18, pady=(0, 18))
+        self.home_recents_frame.grid(row=3, column=0, sticky="ew", padx=14, pady=(0, 14))
         self._page_built["home"] = True
 
     def _build_library_page(self):
@@ -371,7 +371,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self.game_card = ctk.CTkFrame(
             page,
             fg_color=SURFACE_PRIMARY,
-            corner_radius=18,
+            corner_radius=10,
             border_width=1,
             border_color=BORDER_COLOR,
         )
@@ -380,12 +380,12 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self.game_card.grid_rowconfigure(0, weight=1)
 
         self.library_list_panel = ctk.CTkFrame(self.nav_rail, fg_color="transparent")
-        self.library_list_panel.grid(row=5, column=0, sticky="nsew", padx=10, pady=(16, 10))
+        self.library_list_panel.grid(row=5, column=0, sticky="nsew", padx=8, pady=(12, 8))
         self.library_list_panel.grid_columnconfigure(0, weight=1)
         self.library_list_panel.grid_rowconfigure(2, weight=1)
 
         self.library_top = ctk.CTkFrame(self.library_list_panel, fg_color="transparent")
-        self.library_top.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        self.library_top.grid(row=0, column=0, sticky="ew", pady=(0, 6))
         self.library_top.grid_columnconfigure(0, weight=1)
         self.library_top.grid_columnconfigure(1, weight=0)
         self.library_top.grid_columnconfigure(2, weight=0)
@@ -397,7 +397,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self.library_title = ctk.CTkLabel(
             title_block,
             text="Biblioteca",
-            font=("Segoe UI Bold", 22),
+            font=("Segoe UI Bold", 15),
             text_color=TEXT_PRIMARY,
             anchor="w",
         )
@@ -406,7 +406,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self.library_meta = ctk.CTkLabel(
             title_block,
             text="Coleção de jogos",
-            font=("Segoe UI", 12),
+            font=("Segoe UI", 10),
             text_color=TEXT_SECONDARY,
             anchor="w",
         )
@@ -420,8 +420,8 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self.library_all_filter_button = ctk.CTkButton(
             self.library_filter_frame,
             text="Todos",
-            width=72,
-            height=34,
+            width=60,
+            height=28,
             command=lambda: self._set_library_filter("all"),
             fg_color=ACCENT_COLOR,
             hover_color=ACCENT_HOVER,
@@ -434,8 +434,8 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self.library_favorites_filter_button = ctk.CTkButton(
             self.library_filter_frame,
             text="Favoritos",
-            width=92,
-            height=34,
+            width=78,
+            height=28,
             command=lambda: self._set_library_filter("favorites"),
             fg_color=SURFACE_SECONDARY,
             hover_color=SURFACE_TERTIARY,
@@ -443,13 +443,13 @@ class SaveManagerApp(get_dnd_ctk_base()):
             border_width=1,
             border_color=BORDER_COLOR,
         )
-        self.library_favorites_filter_button.grid(row=0, column=1, sticky="e", padx=(6, 0))
+        self.library_favorites_filter_button.grid(row=0, column=1, sticky="e", padx=(4, 0))
 
         self.favorite_button = ctk.CTkButton(
             self.library_top,
             text="[ ]",
             width=44,
-            height=34,
+            height=30,
             command=self._toggle_favorite_game,
             fg_color=SURFACE_SECONDARY,
             hover_color=SURFACE_TERTIARY,
@@ -480,13 +480,13 @@ class SaveManagerApp(get_dnd_ctk_base()):
             border_color=BORDER_COLOR,
             text_color=TEXT_PRIMARY,
         )
-        self.library_search.grid(row=1, column=0, sticky="ew", pady=(0, 10))
+        self.library_search.grid(row=1, column=0, sticky="ew", pady=(0, 8))
         self.library_search.bind("<KeyRelease>", lambda _event: self._refresh_game_selector())
 
         self.game_library_frame = ctk.CTkScrollableFrame(
             self.library_list_panel,
             fg_color="transparent",
-            corner_radius=14,
+            corner_radius=10,
             border_width=0,
         )
         self.game_library_frame.grid(row=2, column=0, sticky="nsew")
@@ -502,15 +502,15 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self.library_game_page = ctk.CTkFrame(
             self.game_card,
             fg_color=SURFACE_SECONDARY,
-            corner_radius=16,
+            corner_radius=14,
             border_width=0,
         )
-        self.library_game_page.grid(row=0, column=0, sticky="nsew", padx=16, pady=16)
+        self.library_game_page.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)
         self.library_game_page.grid_columnconfigure(0, weight=1)
         self.library_game_page.grid_rowconfigure(1, weight=1)
 
         context_top = ctk.CTkFrame(self.library_game_page, fg_color="transparent")
-        context_top.grid(row=0, column=0, sticky="ew", padx=18, pady=(14, 10))
+        context_top.grid(row=0, column=0, sticky="ew", padx=14, pady=(10, 8))
         context_top.grid_columnconfigure(0, weight=1)
 
         self.library_back_button = ctk.CTkButton(
@@ -530,7 +530,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self.library_game_context_label = ctk.CTkLabel(
             context_top,
             text="Página do jogo",
-            font=("Segoe UI", 12),
+            font=("Segoe UI", 10),
             text_color=TEXT_SECONDARY,
             anchor="w",
         )
@@ -540,8 +540,8 @@ class SaveManagerApp(get_dnd_ctk_base()):
             context_top,
             text="Gerenciar jogos",
             command=self._open_library_manage_action,
-            width=138,
-            height=34,
+            width=126,
+            height=30,
             fg_color=SURFACE_SECONDARY,
             hover_color=SURFACE_TERTIARY,
             text_color=TEXT_PRIMARY,
@@ -551,7 +551,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self.library_game_manage_button.grid(row=0, column=1, sticky="e")
 
         body = ctk.CTkFrame(self.library_game_page, fg_color="transparent")
-        body.grid(row=1, column=0, sticky="nsew", padx=18, pady=(0, 18))
+        body.grid(row=1, column=0, sticky="nsew", padx=14, pady=(0, 14))
         body.grid_columnconfigure(0, weight=2)
         body.grid_columnconfigure(1, weight=3)
         body.grid_rowconfigure(1, weight=1)
@@ -559,21 +559,21 @@ class SaveManagerApp(get_dnd_ctk_base()):
         hero = ctk.CTkFrame(
             body,
             fg_color=SURFACE_TERTIARY,
-            corner_radius=18,
+            corner_radius=14,
             border_width=1,
             border_color=BORDER_COLOR,
         )
-        hero.grid(row=0, column=0, rowspan=2, sticky="nsew", padx=(0, 14))
+        hero.grid(row=0, column=0, rowspan=2, sticky="nsew", padx=(0, 12))
         hero.grid_columnconfigure(0, weight=1)
         hero.grid_rowconfigure(0, weight=1)
 
         self.library_game_cover_label = ctk.CTkLabel(
             hero,
             text="JG",
-            font=("Segoe UI Bold", 44),
+            font=("Segoe UI Bold", 36),
             text_color=ACCENT_COLOR,
         )
-        self.library_game_cover_label.grid(row=0, column=0, sticky="nsew", padx=18, pady=18)
+        self.library_game_cover_label.grid(row=0, column=0, sticky="nsew", padx=14, pady=14)
 
         info = ctk.CTkFrame(body, fg_color="transparent")
         info.grid(row=0, column=1, sticky="ew")
@@ -582,7 +582,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self.library_game_title = ctk.CTkLabel(
             info,
             text="Nenhum jogo",
-            font=("Segoe UI Bold", 28),
+            font=("Segoe UI Bold", 22),
             text_color=TEXT_PRIMARY,
             anchor="w",
         )
@@ -591,11 +591,11 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self.library_game_summary = ctk.CTkLabel(
             info,
             text="Selecione um jogo para abrir seu contexto.",
-            font=("Segoe UI", 13),
+            font=("Segoe UI", 11),
             text_color=TEXT_SECONDARY,
             anchor="w",
         )
-        self.library_game_summary.grid(row=1, column=0, sticky="ew", pady=(4, 12))
+        self.library_game_summary.grid(row=1, column=0, sticky="ew", pady=(3, 10))
 
         action_row = ctk.CTkFrame(info, fg_color="transparent")
         action_row.grid(row=2, column=0, sticky="ew")
@@ -607,30 +607,30 @@ class SaveManagerApp(get_dnd_ctk_base()):
             action_row,
             text="Jogar",
             command=self._play_current_game_placeholder,
-            height=40,
+            height=34,
             fg_color=ACCENT_COLOR,
             hover_color=ACCENT_HOVER,
         )
-        self.library_play_button.grid(row=0, column=0, sticky="ew", padx=(0, 8))
+        self.library_play_button.grid(row=0, column=0, sticky="ew", padx=(0, 6))
 
         self.library_open_paths_button = ctk.CTkButton(
             action_row,
             text="Abrir pastas",
             command=self._open_current_game_paths,
-            height=40,
+            height=34,
             fg_color=SURFACE_SECONDARY,
             hover_color=SURFACE_TERTIARY,
             text_color=TEXT_PRIMARY,
             border_width=1,
             border_color=BORDER_COLOR,
         )
-        self.library_open_paths_button.grid(row=0, column=1, sticky="ew", padx=8)
+        self.library_open_paths_button.grid(row=0, column=1, sticky="ew", padx=6)
 
         self.library_favorite_button = ctk.CTkButton(
             action_row,
             text="Favoritar",
             command=self._toggle_favorite_game,
-            height=40,
+            height=34,
             fg_color=SURFACE_SECONDARY,
             hover_color=SURFACE_TERTIARY,
             text_color=TEXT_PRIMARY,
@@ -640,7 +640,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self.library_favorite_button.grid(row=0, column=2, sticky="ew", padx=(8, 0))
 
         details = ctk.CTkFrame(body, fg_color="transparent")
-        details.grid(row=1, column=1, sticky="nsew", pady=(14, 0))
+        details.grid(row=1, column=1, sticky="nsew", pady=(10, 0))
         details.grid_columnconfigure(0, weight=1)
         details.grid_columnconfigure(1, weight=1)
         details.grid_rowconfigure(1, weight=1)
@@ -654,16 +654,16 @@ class SaveManagerApp(get_dnd_ctk_base()):
             corner_radius=14,
             border_width=0,
         )
-        future.grid(row=1, column=0, columnspan=2, sticky="nsew", pady=(12, 0))
+        future.grid(row=1, column=0, columnspan=2, sticky="nsew", pady=(8, 0))
         future.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(
             future,
             text="Espaço preparado para mods, automações, backups e opções de inicialização.",
-            font=("Segoe UI", 13),
+            font=("Segoe UI", 11),
             text_color=TEXT_SECONDARY,
             anchor="w",
             wraplength=520,
-        ).grid(row=0, column=0, sticky="ew", padx=16, pady=16)
+        ).grid(row=0, column=0, sticky="ew", padx=12, pady=12)
 
         self._refresh_library_empty_context()
 
@@ -671,26 +671,26 @@ class SaveManagerApp(get_dnd_ctk_base()):
         card = ctk.CTkFrame(
             master,
             fg_color="transparent",
-            corner_radius=14,
+            corner_radius=10,
             border_width=0,
         )
-        card.grid(row=row, column=column, sticky="ew", padx=(0, 6) if column == 0 else (6, 0))
+        card.grid(row=row, column=column, sticky="ew", padx=(0, 5) if column == 0 else (5, 0))
         card.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(
             card,
             text=title,
-            font=("Segoe UI", 12),
+            font=("Segoe UI", 10),
             text_color=TEXT_SECONDARY,
             anchor="w",
-        ).grid(row=0, column=0, sticky="ew", padx=14, pady=(12, 2))
+        ).grid(row=0, column=0, sticky="ew", padx=10, pady=(8, 1))
         value_label = ctk.CTkLabel(
             card,
             text=value,
-            font=("Segoe UI Semibold", 16),
+            font=("Segoe UI Semibold", 13),
             text_color=TEXT_PRIMARY,
             anchor="w",
         )
-        value_label.grid(row=1, column=0, sticky="ew", padx=14, pady=(0, 12))
+        value_label.grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 8))
         return value_label
 
     def _build_game_page(self):
@@ -733,74 +733,74 @@ class SaveManagerApp(get_dnd_ctk_base()):
             text_color=TEXT_PRIMARY,
             anchor="w",
         )
-        self.game_panel_title.grid(row=0, column=0, sticky="ew", padx=(20, 12), pady=(18, 2))
+        self.game_panel_title.grid(row=0, column=0, sticky="ew", padx=(16, 10), pady=(12, 2))
 
         self.selected_value = ctk.CTkLabel(
             self.selected_card,
             text="Perfil: nenhum",
-            font=("Segoe UI Semibold", 13),
+            font=("Segoe UI Semibold", 12),
             text_color=TEXT_SECONDARY,
             anchor="w",
         )
-        self.selected_value.grid(row=1, column=0, sticky="ew", padx=(20, 12), pady=(0, 18))
+        self.selected_value.grid(row=1, column=0, sticky="ew", padx=(16, 10), pady=(0, 12))
 
         self.selected_hint = ctk.CTkLabel(
             self.selected_card,
             text="",
-            font=("Segoe UI", 11),
+            font=("Segoe UI", 10),
             text_color=TEXT_SECONDARY,
             anchor="w",
         )
-        self.selected_hint.grid(row=1, column=1, sticky="ew", padx=8, pady=(0, 18))
+        self.selected_hint.grid(row=1, column=1, sticky="ew", padx=6, pady=(0, 12))
 
         self.play_button = ctk.CTkButton(
             self.selected_card,
             text="Jogar",
             command=self._play_current_game_placeholder,
-            height=40,
+            height=34,
             fg_color=ACCENT_COLOR,
             hover_color=ACCENT_HOVER,
         )
-        self.play_button.grid(row=0, column=2, rowspan=2, sticky="ew", padx=6, pady=18)
+        self.play_button.grid(row=0, column=2, rowspan=2, sticky="ew", padx=5, pady=12)
 
         self.quick_save_button = ctk.CTkButton(
             self.selected_card,
             text="Salvar",
             command=self._save_current_profile_snapshot,
-            height=40,
+            height=34,
             fg_color=SURFACE_PRIMARY,
             hover_color=SURFACE_TERTIARY,
             text_color=TEXT_PRIMARY,
             border_width=1,
             border_color=BORDER_COLOR,
         )
-        self.quick_save_button.grid(row=0, column=3, rowspan=2, sticky="ew", padx=6, pady=18)
+        self.quick_save_button.grid(row=0, column=3, rowspan=2, sticky="ew", padx=5, pady=12)
 
         self.load_profile_button = ctk.CTkButton(
             self.selected_card,
             text="Carregar perfil",
             command=self._load_selected_profile,
-            height=40,
+            height=34,
             fg_color=SURFACE_PRIMARY,
             hover_color=SURFACE_TERTIARY,
             text_color=TEXT_PRIMARY,
             border_width=1,
             border_color=BORDER_COLOR,
         )
-        self.load_profile_button.grid(row=0, column=4, rowspan=2, sticky="ew", padx=6, pady=18)
+        self.load_profile_button.grid(row=0, column=4, rowspan=2, sticky="ew", padx=5, pady=12)
 
         self.more_actions_button = ctk.CTkButton(
             self.selected_card,
             text="Mais ações",
             command=self._toggle_more_actions,
-            height=40,
+            height=34,
             fg_color=SURFACE_PRIMARY,
             hover_color=SURFACE_TERTIARY,
             text_color=TEXT_PRIMARY,
             border_width=1,
             border_color=BORDER_COLOR,
         )
-        self.more_actions_button.grid(row=0, column=5, rowspan=2, sticky="ew", padx=(6, 18), pady=18)
+        self.more_actions_button.grid(row=0, column=5, rowspan=2, sticky="ew", padx=(5, 14), pady=12)
 
         self.game_banner_label = ctk.CTkLabel(self.left_panel, text="")
         self.game_panel_meta = ctk.CTkLabel(self.left_panel, text="")
@@ -2239,7 +2239,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
             self.content.grid_columnconfigure(2, weight=0)
             self.content.grid_rowconfigure(0, weight=1)
             self.content.grid_rowconfigure(1, weight=0)
-            self.nav_rail.grid_configure(row=0, column=0, rowspan=2, padx=(0, 10), pady=0, sticky="ns")
+            self.nav_rail.grid_configure(row=0, column=0, rowspan=2, padx=(0, 8), pady=0, sticky="ns")
             self.page_host.grid_configure(row=0, column=1, columnspan=2, padx=0, pady=0, sticky="nsew")
         else:
             self.content.grid_columnconfigure(0, weight=0)
@@ -2247,7 +2247,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
             self.content.grid_columnconfigure(2, weight=3)
             self.content.grid_rowconfigure(0, weight=1)
             self.content.grid_rowconfigure(1, weight=0)
-            self.nav_rail.grid_configure(row=0, column=0, rowspan=1, padx=(0, 12), pady=0, sticky="ns")
+            self.nav_rail.grid_configure(row=0, column=0, rowspan=1, padx=(0, 10), pady=0, sticky="ns")
             self.page_host.grid_configure(row=0, column=1, columnspan=2, padx=0, pady=0, sticky="nsew")
 
     def _apply_header_layout(self, compact):
