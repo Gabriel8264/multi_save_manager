@@ -70,6 +70,8 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self.busy = False
         self.selected_profile = None
         self.current_game = ""
+        self.sidebar_selected_game = ""
+        self.collection_selected_game = ""
         self.current_page = "home"
         self.game_manager = None
         self._game_manager_open_after = None
@@ -82,6 +84,9 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self.library_cards = {}
         self.home_library_cards = {}
         self.library_filter = "all"
+        self.collection_cards = {}
+        self.collection_filter = "all"
+        self._collection_grid_columns = 0
         self.library_mode = "collection"
         self._page_built = {}
 
@@ -277,8 +282,16 @@ class SaveManagerApp(get_dnd_ctk_base()):
             )
 
         self.pages[page_name].tkraise()
+        self._sync_library_navigation_area(page_name)
         if page_name == "home":
             self._refresh_home_shelves()
+
+    def _sync_library_navigation_area(self, page_name):
+        if not hasattr(self, "library_list_panel"):
+            return
+
+        self.nav_rail.configure(width=220)
+        self.library_list_panel.grid()
 
     def _build_home_page(self):
         if self._page_built.get("home"):
@@ -308,16 +321,6 @@ class SaveManagerApp(get_dnd_ctk_base()):
             anchor="w",
         )
         self.home_current_game.grid(row=1, column=0, sticky="ew", padx=18, pady=(0, 10))
-
-        ctk.CTkButton(
-            hero,
-            text="Abrir biblioteca",
-            command=lambda: self._navigate("library"),
-            width=132,
-            height=34,
-            fg_color=ACCENT_COLOR,
-            hover_color=ACCENT_HOVER,
-        ).grid(row=2, column=0, sticky="w", padx=18, pady=(0, 16))
 
         shelf = ctk.CTkFrame(page, fg_color=SURFACE_PRIMARY, corner_radius=14, border_width=1, border_color=BORDER_COLOR)
         shelf.grid(row=1, column=0, sticky="nsew")
@@ -396,7 +399,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
 
         self.library_title = ctk.CTkLabel(
             title_block,
-            text="Biblioteca",
+            text="Jogos",
             font=("Segoe UI Bold", 15),
             text_color=TEXT_PRIMARY,
             anchor="w",
@@ -405,7 +408,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
 
         self.library_meta = ctk.CTkLabel(
             title_block,
-            text="Coleção de jogos",
+            text="Acesso rápido",
             font=("Segoe UI", 10),
             text_color=TEXT_SECONDARY,
             anchor="w",
@@ -501,171 +504,107 @@ class SaveManagerApp(get_dnd_ctk_base()):
     def _build_library_game_context(self):
         self.library_game_page = ctk.CTkFrame(
             self.game_card,
-            fg_color=SURFACE_SECONDARY,
-            corner_radius=14,
+            fg_color=SURFACE_PRIMARY,
+            corner_radius=10,
             border_width=0,
         )
         self.library_game_page.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)
         self.library_game_page.grid_columnconfigure(0, weight=1)
         self.library_game_page.grid_rowconfigure(1, weight=1)
 
-        context_top = ctk.CTkFrame(self.library_game_page, fg_color="transparent")
-        context_top.grid(row=0, column=0, sticky="ew", padx=14, pady=(10, 8))
-        context_top.grid_columnconfigure(0, weight=1)
+        collection_top = ctk.CTkFrame(self.library_game_page, fg_color="transparent")
+        collection_top.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+        collection_top.grid_columnconfigure(0, weight=1)
 
-        self.library_back_button = ctk.CTkButton(
-            context_top,
-            text="Voltar para biblioteca",
-            command=self._show_library_collection,
-            width=160,
-            height=34,
-            fg_color=SURFACE_SECONDARY,
-            hover_color=SURFACE_TERTIARY,
-            text_color=TEXT_PRIMARY,
-            border_width=1,
-            border_color=BORDER_COLOR,
-        )
-        self.library_back_button.grid_remove()
+        title_stack = ctk.CTkFrame(collection_top, fg_color="transparent")
+        title_stack.grid(row=0, column=0, sticky="ew", padx=(2, 12))
+        title_stack.grid_columnconfigure(0, weight=1)
 
         self.library_game_context_label = ctk.CTkLabel(
-            context_top,
-            text="Página do jogo",
-            font=("Segoe UI", 10),
-            text_color=TEXT_SECONDARY,
-            anchor="w",
-        )
-        self.library_game_context_label.grid(row=0, column=0, sticky="ew")
-
-        self.library_game_manage_button = ctk.CTkButton(
-            context_top,
-            text="Gerenciar jogos",
-            command=self._open_library_manage_action,
-            width=126,
-            height=30,
-            fg_color=SURFACE_SECONDARY,
-            hover_color=SURFACE_TERTIARY,
-            text_color=TEXT_PRIMARY,
-            border_width=1,
-            border_color=BORDER_COLOR,
-        )
-        self.library_game_manage_button.grid(row=0, column=1, sticky="e")
-
-        body = ctk.CTkFrame(self.library_game_page, fg_color="transparent")
-        body.grid(row=1, column=0, sticky="nsew", padx=14, pady=(0, 14))
-        body.grid_columnconfigure(0, weight=2)
-        body.grid_columnconfigure(1, weight=3)
-        body.grid_rowconfigure(1, weight=1)
-
-        hero = ctk.CTkFrame(
-            body,
-            fg_color=SURFACE_TERTIARY,
-            corner_radius=14,
-            border_width=1,
-            border_color=BORDER_COLOR,
-        )
-        hero.grid(row=0, column=0, rowspan=2, sticky="nsew", padx=(0, 12))
-        hero.grid_columnconfigure(0, weight=1)
-        hero.grid_rowconfigure(0, weight=1)
-
-        self.library_game_cover_label = ctk.CTkLabel(
-            hero,
-            text="JG",
-            font=("Segoe UI Bold", 36),
-            text_color=ACCENT_COLOR,
-        )
-        self.library_game_cover_label.grid(row=0, column=0, sticky="nsew", padx=14, pady=14)
-
-        info = ctk.CTkFrame(body, fg_color="transparent")
-        info.grid(row=0, column=1, sticky="ew")
-        info.grid_columnconfigure(0, weight=1)
-
-        self.library_game_title = ctk.CTkLabel(
-            info,
-            text="Nenhum jogo",
+            title_stack,
+            text="Biblioteca",
             font=("Segoe UI Bold", 22),
             text_color=TEXT_PRIMARY,
             anchor="w",
         )
-        self.library_game_title.grid(row=0, column=0, sticky="ew")
+        self.library_game_context_label.grid(row=0, column=0, sticky="ew")
 
-        self.library_game_summary = ctk.CTkLabel(
-            info,
-            text="Selecione um jogo para abrir seu contexto.",
+        self.collection_meta_label = ctk.CTkLabel(
+            title_stack,
+            text="Coleção completa",
             font=("Segoe UI", 11),
             text_color=TEXT_SECONDARY,
             anchor="w",
         )
-        self.library_game_summary.grid(row=1, column=0, sticky="ew", pady=(3, 10))
+        self.collection_meta_label.grid(row=1, column=0, sticky="ew", pady=(1, 0))
 
-        action_row = ctk.CTkFrame(info, fg_color="transparent")
-        action_row.grid(row=2, column=0, sticky="ew")
-        action_row.grid_columnconfigure(0, weight=1)
-        action_row.grid_columnconfigure(1, weight=1)
-        action_row.grid_columnconfigure(2, weight=1)
+        self.collection_search = ctk.CTkEntry(
+            collection_top,
+            placeholder_text="Buscar na coleção...",
+            width=230,
+            height=32,
+            corner_radius=10,
+            fg_color=SURFACE_SECONDARY,
+            border_color=BORDER_COLOR,
+            text_color=TEXT_PRIMARY,
+        )
+        self.collection_search.grid(row=0, column=1, rowspan=2, sticky="e", padx=(0, 8))
+        self.collection_search.bind("<KeyRelease>", lambda _event: self._refresh_collection_grid())
 
-        self.library_play_button = ctk.CTkButton(
-            action_row,
-            text="Jogar",
-            command=self._play_current_game_placeholder,
-            height=34,
+        self.collection_filter_frame = ctk.CTkFrame(collection_top, fg_color="transparent")
+        self.collection_filter_frame.grid(row=0, column=2, rowspan=2, sticky="e", padx=(0, 8))
+
+        self.collection_all_filter_button = ctk.CTkButton(
+            self.collection_filter_frame,
+            text="Todos",
+            width=62,
+            height=30,
+            command=lambda: self._set_collection_filter("all"),
             fg_color=ACCENT_COLOR,
             hover_color=ACCENT_HOVER,
+            text_color=TEXT_PRIMARY,
+            border_width=1,
+            border_color=BORDER_COLOR,
         )
-        self.library_play_button.grid(row=0, column=0, sticky="ew", padx=(0, 6))
+        self.collection_all_filter_button.grid(row=0, column=0, sticky="e")
 
-        self.library_open_paths_button = ctk.CTkButton(
-            action_row,
-            text="Abrir pastas",
-            command=self._open_current_game_paths,
-            height=34,
+        self.collection_favorites_filter_button = ctk.CTkButton(
+            self.collection_filter_frame,
+            text="Favoritos",
+            width=84,
+            height=30,
+            command=lambda: self._set_collection_filter("favorites"),
+            fg_color=SURFACE_SECONDARY,
+            hover_color=SURFACE_TERTIARY,
+            text_color=TEXT_SECONDARY,
+            border_width=1,
+            border_color=BORDER_COLOR,
+        )
+        self.collection_favorites_filter_button.grid(row=0, column=1, sticky="e", padx=(5, 0))
+
+        self.collection_refresh_button = ctk.CTkButton(
+            collection_top,
+            text="Atualizar",
+            width=86,
+            height=30,
+            command=self._refresh_library_collection,
             fg_color=SURFACE_SECONDARY,
             hover_color=SURFACE_TERTIARY,
             text_color=TEXT_PRIMARY,
             border_width=1,
             border_color=BORDER_COLOR,
         )
-        self.library_open_paths_button.grid(row=0, column=1, sticky="ew", padx=6)
+        self.collection_refresh_button.grid(row=0, column=3, rowspan=2, sticky="e")
 
-        self.library_favorite_button = ctk.CTkButton(
-            action_row,
-            text="Favoritar",
-            command=self._toggle_favorite_game,
-            height=34,
+        self.collection_grid_frame = ctk.CTkScrollableFrame(
+            self.library_game_page,
             fg_color=SURFACE_SECONDARY,
-            hover_color=SURFACE_TERTIARY,
-            text_color=TEXT_PRIMARY,
-            border_width=1,
-            border_color=BORDER_COLOR,
-        )
-        self.library_favorite_button.grid(row=0, column=2, sticky="ew", padx=(8, 0))
-
-        details = ctk.CTkFrame(body, fg_color="transparent")
-        details.grid(row=1, column=1, sticky="nsew", pady=(10, 0))
-        details.grid_columnconfigure(0, weight=1)
-        details.grid_columnconfigure(1, weight=1)
-        details.grid_rowconfigure(1, weight=1)
-
-        self.library_saves_stat = self._build_library_stat_card(details, 0, 0, "Saves", "0 perfil(is)")
-        self.library_paths_stat = self._build_library_stat_card(details, 0, 1, "Diretórios", "0 pasta(s)")
-
-        future = ctk.CTkFrame(
-            details,
-            fg_color=SURFACE_PRIMARY,
-            corner_radius=14,
+            corner_radius=12,
             border_width=0,
         )
-        future.grid(row=1, column=0, columnspan=2, sticky="nsew", pady=(8, 0))
-        future.grid_columnconfigure(0, weight=1)
-        ctk.CTkLabel(
-            future,
-            text="Espaço preparado para mods, automações, backups e opções de inicialização.",
-            font=("Segoe UI", 11),
-            text_color=TEXT_SECONDARY,
-            anchor="w",
-            wraplength=520,
-        ).grid(row=0, column=0, sticky="ew", padx=12, pady=12)
-
-        self._refresh_library_empty_context()
+        self.collection_grid_frame.grid(row=1, column=0, sticky="nsew")
+        self.collection_grid_frame.bind("<Configure>", self._on_collection_grid_resize)
+        self._refresh_collection_grid()
 
     def _build_library_stat_card(self, master, row, column, title, value):
         card = ctk.CTkFrame(
@@ -1348,6 +1287,11 @@ class SaveManagerApp(get_dnd_ctk_base()):
             if has_selector:
                 self.game_selector.set(self.current_game)
 
+        if not self.sidebar_selected_game or self.sidebar_selected_game not in all_games:
+            self.sidebar_selected_game = self.current_game
+        if not self.collection_selected_game or self.collection_selected_game not in all_games:
+            self.collection_selected_game = self.current_game
+
         self._update_current_game_details()
         self._refresh_game_library_cards(query)
         self._refresh_profiles()
@@ -1441,7 +1385,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
             card = GameLibraryListItem(
                 self.game_library_frame,
                 game=game,
-                selected=game.name == self.current_game,
+                selected=game.name == self.sidebar_selected_game,
                 on_select=self._select_game_from_card,
                 on_open=self._open_game_from_card,
                 on_favorite=self._toggle_favorite_from_card,
@@ -1449,6 +1393,141 @@ class SaveManagerApp(get_dnd_ctk_base()):
             )
             card.grid(row=index, column=0, sticky="ew", padx=8, pady=(8 if index == 0 else 4, 4))
             self.library_cards[game.name] = card
+
+    def _get_collection_query(self):
+        return self.collection_search.get().strip() if hasattr(self, "collection_search") else ""
+
+    def _get_collection_grid_columns(self, width=None):
+        if width is None and hasattr(self, "collection_grid_frame"):
+            width = self.collection_grid_frame.winfo_width()
+        width = width or 900
+        return max(3, min(7, int(max(width - 24, 540) // 196)))
+
+    def _on_collection_grid_resize(self, event=None):
+        if not hasattr(self, "collection_grid_frame"):
+            return
+
+        columns = self._get_collection_grid_columns(event.width if event else None)
+        if columns == self._collection_grid_columns:
+            return
+
+        self._collection_grid_columns = columns
+        self._refresh_collection_grid()
+
+    def _refresh_library_collection(self):
+        self._refresh_game_selector()
+        self._refresh_collection_grid()
+
+    def _refresh_collection_grid(self):
+        if not hasattr(self, "collection_grid_frame"):
+            return
+
+        for widget in self.collection_grid_frame.winfo_children():
+            widget.destroy()
+        self.collection_cards = {}
+
+        query = self._get_collection_query()
+        all_games = listar_jogos_biblioteca(query)
+        games = [
+            game for game in all_games
+            if self.collection_filter == "all" or game.favorite
+        ]
+        total_games = len(listar_jogos_biblioteca(""))
+        favorite_total = len([game for game in listar_jogos_biblioteca("") if game.favorite])
+        self.collection_meta_label.configure(
+            text=(
+                f"{len(games)} favorito(s)"
+                if self.collection_filter == "favorites"
+                else (f"{len(games)} de {total_games} jogo(s)" if query else f"{total_games} jogo(s)")
+            )
+        )
+        self._update_collection_filter_buttons(favorite_total)
+
+        if not games:
+            empty = ctk.CTkFrame(self.collection_grid_frame, fg_color="transparent")
+            empty.grid(row=0, column=0, sticky="nsew", padx=20, pady=20)
+            ctk.CTkLabel(
+                empty,
+                text="Nenhum jogo encontrado" if query else "Biblioteca vazia",
+                font=("Segoe UI Bold", 18),
+                text_color=TEXT_PRIMARY,
+                anchor="w",
+            ).grid(row=0, column=0, sticky="w")
+            ctk.CTkLabel(
+                empty,
+                text="Cadastre jogos em Gerenciar jogos para montar sua coleção.",
+                font=("Segoe UI", 12),
+                text_color=TEXT_SECONDARY,
+                anchor="w",
+            ).grid(row=1, column=0, sticky="w", pady=(4, 10))
+            ctk.CTkButton(
+                empty,
+                text="Gerenciar jogos",
+                command=self._open_game_manager,
+                width=130,
+                height=32,
+                fg_color=ACCENT_COLOR,
+                hover_color=ACCENT_HOVER,
+            ).grid(row=2, column=0, sticky="w")
+            return
+
+        columns = self._get_collection_grid_columns()
+        self._collection_grid_columns = columns
+        for column in range(columns):
+            self.collection_grid_frame.grid_columnconfigure(column, weight=0)
+
+        for index, game in enumerate(games):
+            row = index // columns
+            column = index % columns
+            card = GameLibraryCard(
+                self.collection_grid_frame,
+                game=game,
+                selected=game.name == self.collection_selected_game,
+                on_select=self._select_game_from_collection,
+                on_open=self._open_game_from_collection,
+                on_favorite=self._toggle_favorite_from_card,
+                profile_count=len(listar_perfis(game.name)),
+            )
+            card.grid(row=row, column=column, sticky="nw", padx=8, pady=8)
+            self.collection_cards[game.name] = card
+
+    def _set_collection_filter(self, filter_name):
+        if filter_name not in {"all", "favorites"} or filter_name == self.collection_filter:
+            return
+
+        self.collection_filter = filter_name
+        self._update_collection_filter_buttons()
+        self._refresh_collection_grid()
+
+    def _update_collection_filter_buttons(self, favorite_total=None):
+        if not hasattr(self, "collection_all_filter_button"):
+            return
+
+        self.collection_all_filter_button.configure(
+            fg_color=ACCENT_COLOR if self.collection_filter == "all" else SURFACE_SECONDARY,
+            hover_color=ACCENT_HOVER if self.collection_filter == "all" else SURFACE_TERTIARY,
+            text_color=TEXT_PRIMARY if self.collection_filter == "all" else TEXT_SECONDARY,
+        )
+        self.collection_favorites_filter_button.configure(
+            text="Favoritos" if favorite_total is None else f"Favoritos {favorite_total}",
+            fg_color=ACCENT_COLOR if self.collection_filter == "favorites" else SURFACE_SECONDARY,
+            hover_color=ACCENT_HOVER if self.collection_filter == "favorites" else SURFACE_TERTIARY,
+            text_color=TEXT_PRIMARY if self.collection_filter == "favorites" else TEXT_SECONDARY,
+        )
+
+    def _select_game_from_collection(self, selected_game):
+        if self.busy:
+            return
+
+        self._set_collection_selected_game(selected_game)
+
+    def _open_game_from_collection(self, selected_game):
+        if self.busy:
+            return
+
+        self._set_collection_selected_game(selected_game)
+        self._set_active_game(selected_game)
+        self._show_page("game")
 
     def _refresh_home_shelves(self):
         if not hasattr(self, "home_favorites_frame") or not hasattr(self, "home_recents_frame"):
@@ -1494,10 +1573,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
         if self.busy:
             return
 
-        previous_game = self.current_game
-        if selected_game != self.current_game:
-            self._on_game_selected(selected_game)
-        self._update_library_card_selection(previous_game, selected_game)
+        self._set_active_game(selected_game)
         self._navigate("library")
 
     def _set_library_filter(self, filter_name):
@@ -1528,42 +1604,65 @@ class SaveManagerApp(get_dnd_ctk_base()):
         if self.busy:
             return
 
-        previous_game = self.current_game
-        if selected_game != self.current_game:
-            self._on_game_selected(selected_game)
-        self._update_library_card_selection(previous_game, selected_game)
+        self._set_sidebar_selected_game(selected_game)
+        self._set_active_game(selected_game)
 
     def _open_game_from_card(self, selected_game):
         if self.busy:
             return
 
-        previous_game = self.current_game
-        if selected_game != self.current_game:
-            self._on_game_selected(selected_game)
-        self._update_library_card_selection(previous_game, selected_game)
-        self._show_library_game_context()
+        self._set_sidebar_selected_game(selected_game)
+        self._set_active_game(selected_game)
+        self._show_page("game")
 
-    def _update_library_card_selection(self, previous_game, selected_game):
+    def _set_sidebar_selected_game(self, selected_game):
+        previous_game = self.sidebar_selected_game
+        self.sidebar_selected_game = selected_game
+        self._update_card_selection(self.library_cards, previous_game, selected_game)
+
+    def _set_collection_selected_game(self, selected_game):
+        previous_game = self.collection_selected_game
+        self.collection_selected_game = selected_game
+        self._update_card_selection(self.collection_cards, previous_game, selected_game)
+
+    def _update_card_selection(self, cards, previous_game, selected_game):
         if previous_game and previous_game != selected_game:
-            previous_card = self.library_cards.get(previous_game)
+            previous_card = cards.get(previous_game)
             if previous_card and previous_card.winfo_exists():
                 previous_card.set_selected(False)
-            previous_home_card = self.home_library_cards.get(previous_game)
-            if previous_home_card and previous_home_card.winfo_exists():
-                previous_home_card.set_selected(False)
 
-        selected_card = self.library_cards.get(selected_game)
+        selected_card = cards.get(selected_game)
         if selected_card and selected_card.winfo_exists():
             selected_card.set_selected(True)
-        selected_home_card = self.home_library_cards.get(selected_game)
-        if selected_home_card and selected_home_card.winfo_exists():
-            selected_home_card.set_selected(True)
+
+    def _set_active_game(self, selected_game, record_recent=True):
+        if not selected_game:
+            return
+
+        changed = selected_game != self.current_game
+        self.current_game = selected_game
+        if record_recent:
+            registrar_recente(selected_game)
+        if changed:
+            self.selected_profile = None
+
+        self._update_current_game_details()
+        self._refresh_profiles()
+        self._refresh_home_shelves_if_visible()
+        self._set_status(f"Jogo atual alterado para '{selected_game}'.", "info")
+
+    def _refresh_home_shelves_if_visible(self):
+        if self.current_page == "home":
+            self._refresh_home_shelves()
 
     def _show_library_collection(self):
         self.library_mode = "collection"
-        self.library_title.configure(text="Biblioteca")
+        self.library_title.configure(text="Jogos")
+        if hasattr(self, "library_game_context_label"):
+            self.library_game_context_label.configure(text="Biblioteca")
         query = self._get_library_query()
         self._refresh_game_library_cards(query)
+        self._refresh_collection_grid()
 
     def _show_library_game_context(self):
         if not self.current_game:
@@ -1571,52 +1670,15 @@ class SaveManagerApp(get_dnd_ctk_base()):
 
         self.library_mode = "game"
         registrar_recente(self.current_game)
-        self._refresh_home_shelves()
-        self._refresh_library_game_context()
+        self._refresh_home_shelves_if_visible()
+        self._set_collection_selected_game(self.current_game)
 
     def _refresh_library_game_context(self):
-        if not hasattr(self, "library_game_page"):
-            return
-
-        if not self.current_game:
-            self._refresh_library_empty_context()
-            return
-
-        paths = obter_diretorios_jogo(self.current_game)
-        profiles = listar_perfis(self.current_game)
-        valid_paths = [path for path in paths if Path(path).is_dir()]
-        invalid_count = max(0, len(paths) - len(valid_paths))
-        initials = "".join(part[:1] for part in self.current_game.split()[:2]).upper() or "JG"
-
-        self.library_game_cover_label.configure(text=initials)
-        self.library_game_title.configure(text=self.current_game)
-        self.library_game_summary.configure(
-            text=f"{len(profiles)} perfil(is) de save · {len(paths)} diretório(s) cadastrado(s)"
-        )
-        self.library_saves_stat.configure(text=f"{len(profiles)} perfil(is)")
-        path_status = f"{len(valid_paths)}/{len(paths)} pasta(s) ok" if paths else "Nenhuma pasta"
-        if invalid_count:
-            path_status += f" · {invalid_count} inválida(s)"
-        self.library_paths_stat.configure(text=path_status)
-        favorite = jogo_eh_favorito(self.current_game)
-        self.library_favorite_button.configure(text="Favorito" if favorite else "Favoritar")
-        self.library_game_manage_button.configure(text="Gerenciar jogo")
-        self.library_open_paths_button.configure(state="normal" if valid_paths else "disabled")
-        self.library_play_button.configure(state="normal")
+        if self.current_game:
+            self._set_collection_selected_game(self.current_game)
 
     def _refresh_library_empty_context(self):
-        if not hasattr(self, "library_game_page"):
-            return
-
-        self.library_game_cover_label.configure(text="JG")
-        self.library_game_title.configure(text="Selecione um jogo")
-        self.library_game_summary.configure(text="Selecione um jogo para ver detalhes.")
-        self.library_saves_stat.configure(text="0 perfil(is)")
-        self.library_paths_stat.configure(text="Nenhuma pasta")
-        self.library_favorite_button.configure(text="Favoritar", state="disabled")
-        self.library_game_manage_button.configure(text="Gerenciar jogos")
-        self.library_open_paths_button.configure(state="disabled")
-        self.library_play_button.configure(state="disabled")
+        return
 
     def _open_current_game_paths(self):
         if not self.current_game:
@@ -1624,7 +1686,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
 
         opened = 0
         registrar_recente(self.current_game)
-        self._refresh_home_shelves()
+        self._refresh_home_shelves_if_visible()
         for raw_path in obter_diretorios_jogo(self.current_game):
             path = Path(raw_path)
             if path.is_dir():
@@ -1656,7 +1718,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
             if hasattr(self, "favorite_button"):
                 self.favorite_button.configure(text="[ ]", state="disabled")
             if hasattr(self, "library_meta"):
-                self.library_meta.configure(text="Coleção de jogos")
+                self.library_meta.configure(text="Acesso rápido")
             self._refresh_game_panel()
             return
 
@@ -1673,7 +1735,6 @@ class SaveManagerApp(get_dnd_ctk_base()):
         if hasattr(self, "game_paths_label"):
             self.game_paths_label.configure(text="")
         self._refresh_game_panel(paths)
-        self._refresh_library_game_context()
 
     def _refresh_game_panel(self, paths=None):
         if not self.current_game:
@@ -1829,13 +1890,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
     def _on_game_selected(self, selected_game):
         if self.busy:
             return
-        self.current_game = selected_game
-        registrar_recente(selected_game)
-        self.selected_profile = None
-        self._update_current_game_details()
-        self._refresh_profiles()
-        self._refresh_home_shelves()
-        self._set_status(f"Jogo atual alterado para '{selected_game}'.", "info")
+        self._set_active_game(selected_game)
 
     def _toggle_favorite_game(self):
         if not self.current_game:
@@ -1843,8 +1898,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
 
         favorite = alternar_favorito_jogo(self.current_game)
         self._sync_favorite_visual(self.current_game, favorite)
-        self._refresh_library_game_context()
-        self._refresh_home_shelves()
+        self._refresh_home_shelves_if_visible()
         self._set_status(
             f"Jogo '{self.current_game}' {'favoritado' if favorite else 'removido dos favoritos'}.",
             "success",
@@ -1856,12 +1910,12 @@ class SaveManagerApp(get_dnd_ctk_base()):
 
         favorite = alternar_favorito_jogo(game_name)
         self._sync_favorite_visual(game_name, favorite)
-        self._refresh_home_shelves()
-        if self.current_game == game_name:
-            self._refresh_library_game_context()
+        self._refresh_home_shelves_if_visible()
 
         if self.library_filter == "favorites" and not favorite:
             self._refresh_game_library_cards(self._get_library_query())
+        if self.collection_filter == "favorites" and not favorite:
+            self._refresh_collection_grid()
 
         self._set_status(
             f"Jogo '{game_name}' {'favoritado' if favorite else 'removido dos favoritos'}.",
@@ -1877,8 +1931,13 @@ class SaveManagerApp(get_dnd_ctk_base()):
         if home_card and home_card.winfo_exists():
             home_card.set_favorite(favorite)
 
+        collection_card = self.collection_cards.get(game_name)
+        if collection_card and collection_card.winfo_exists():
+            collection_card.set_favorite(favorite)
+
         favorite_total = len([game for game in listar_jogos_biblioteca("") if game.favorite])
         self._update_library_filter_buttons(favorite_total)
+        self._update_collection_filter_buttons(favorite_total)
 
     def _open_game_manager(self):
         if self.busy:
@@ -2186,8 +2245,11 @@ class SaveManagerApp(get_dnd_ctk_base()):
 
     def _after_game_saved(self, game_name):
         self.current_game = game_name
+        self.sidebar_selected_game = game_name
+        self.collection_selected_game = game_name
         self.selected_profile = None
         self._refresh_game_selector()
+        self._refresh_collection_grid()
         self._refresh_profiles()
         self._refresh_home_shelves()
         if self.game_manager and self.game_manager.winfo_exists():
@@ -2205,8 +2267,11 @@ class SaveManagerApp(get_dnd_ctk_base()):
     def _after_game_deleted(self):
         games = self._get_sorted_games("")
         self.current_game = games[0] if games else ""
+        self.sidebar_selected_game = self.current_game
+        self.collection_selected_game = self.current_game
         self.selected_profile = None
         self._refresh_game_selector()
+        self._refresh_collection_grid()
         self._refresh_profiles()
         self._refresh_home_shelves()
         if self.game_manager and self.game_manager.winfo_exists():
