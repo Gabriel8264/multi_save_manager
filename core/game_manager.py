@@ -17,7 +17,7 @@ from .save_manager import (
 from .settings_manager import (
     alternar_favorito,
     eh_favorito,
-    listar_favoritos,
+    limpar_favoritos_orfaos,
     remover_jogo_dos_favoritos,
     renomear_jogo_nos_favoritos,
 )
@@ -65,12 +65,13 @@ def _obter_metadados_jogo(jogo, metadados=None):
 
 
 def listar_jogos_biblioteca(query=""):
-    favoritos = set(listar_favoritos())
+    nomes_jogos = listar_jogos()
+    favoritos = set(limpar_favoritos_orfaos(nomes_jogos))
     metadados = _carregar_metadados_biblioteca()
     termo = query.strip().lower()
     jogos = []
 
-    for nome in listar_jogos():
+    for nome in nomes_jogos:
         if termo and termo not in nome.lower():
             continue
 

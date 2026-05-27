@@ -22,6 +22,7 @@ from app_ui.theme import (
     SURFACE_TERTIARY,
     TEXT_PRIMARY,
     TEXT_SECONDARY,
+    WARNING_COLOR,
 )
 from core.path_resolver import resolver_caminho
 from core.validators import validate_save_path
@@ -146,7 +147,17 @@ class ValidatedEntry(ctk.CTkFrame):
 
 
 class GameLibraryCard(ctk.CTkFrame):
-    def __init__(self, master, game, selected, on_select, on_open=None, profile_count=None, compact=False):
+    def __init__(
+        self,
+        master,
+        game,
+        selected,
+        on_select,
+        on_open=None,
+        on_favorite=None,
+        profile_count=None,
+        compact=False,
+    ):
         border_color = ACCENT_COLOR if selected else BORDER_COLOR
         width = 156 if compact else 230
         height = 132 if compact else 154
@@ -162,9 +173,12 @@ class GameLibraryCard(ctk.CTkFrame):
         self.game = game
         self.on_select = on_select
         self.on_open = on_open
+        self.on_favorite = on_favorite
         self.profile_count = profile_count
         self.compact = compact
         self.selected = selected
+        self.favorite = game.favorite
+        self.favorite_button = None
         self.placeholder_label = None
         self.details_label = None
         self.status_label = None
@@ -195,6 +209,7 @@ class GameLibraryCard(ctk.CTkFrame):
         media.grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 6))
         media.grid_propagate(False)
         media.grid_columnconfigure(0, weight=1)
+        media.grid_rowconfigure(0, weight=1)
         self._bind_click(media)
         self._bind_open(media)
 
@@ -205,6 +220,7 @@ class GameLibraryCard(ctk.CTkFrame):
             image_label.grid(row=0, column=0, sticky="nsew")
             self._bind_click(image_label)
             self._bind_open(image_label)
+            self._build_favorite_button(media)
             return
 
         initials = "".join(part[:1] for part in self.game.name.split()[:2]).upper() or "JG"
@@ -218,6 +234,21 @@ class GameLibraryCard(ctk.CTkFrame):
         placeholder.grid(row=0, column=0, sticky="nsew")
         self._bind_click(placeholder)
         self._bind_open(placeholder)
+        self._build_favorite_button(media)
+
+    def _build_favorite_button(self, master):
+        self.favorite_button = ctk.CTkLabel(
+            master,
+            text="★" if self.favorite else "☆",
+            width=24,
+            height=24,
+            corner_radius=12,
+            fg_color=SURFACE_PRIMARY,
+            text_color=WARNING_COLOR if self.favorite else TEXT_SECONDARY,
+            font=("Segoe UI Symbol", 15),
+        )
+        self.favorite_button.grid(row=0, column=0, sticky="ne", padx=6, pady=5)
+        self.favorite_button.bind("<Button-1>", self._handle_favorite)
 
     def _build_details(self, selected):
         title = ctk.CTkLabel(
@@ -232,7 +263,7 @@ class GameLibraryCard(ctk.CTkFrame):
         self._bind_open(title)
 
         save_count = self.profile_count if self.profile_count is not None else len(self.game.save_paths)
-        status_text = "Selecionado" if selected else ("Favorito" if self.game.favorite else "Pronto")
+        status_text = "Selecionado" if selected else ("Favorito" if self.favorite else "Pronto")
         details_text = f"{save_count} save(s)"
         if self.compact:
             details_text = f"{details_text} · {status_text}"
@@ -256,7 +287,7 @@ class GameLibraryCard(ctk.CTkFrame):
             self,
             text=status_text,
             font=("Segoe UI Semibold", 9 if self.compact else 10),
-            text_color=ACCENT_COLOR if selected or self.game.favorite else TEXT_SECONDARY,
+            text_color=ACCENT_COLOR if selected or self.favorite else TEXT_SECONDARY,
             anchor="w",
         )
         self.status_label = status
@@ -275,7 +306,7 @@ class GameLibraryCard(ctk.CTkFrame):
             self.placeholder_label.configure(text_color=ACCENT_COLOR if selected else TEXT_SECONDARY)
 
         save_count = self.profile_count if self.profile_count is not None else len(self.game.save_paths)
-        status_text = "Selecionado" if selected else ("Favorito" if self.game.favorite else "Pronto")
+        status_text = "Selecionado" if selected else ("Favorito" if self.favorite else "Pronto")
         details_text = f"{save_count} save(s)"
         if self.compact:
             details_text = f"{details_text} · {status_text}"
@@ -289,8 +320,17 @@ class GameLibraryCard(ctk.CTkFrame):
         if self.status_label:
             self.status_label.configure(
                 text=status_text,
-                text_color=ACCENT_COLOR if selected or self.game.favorite else TEXT_SECONDARY,
+                text_color=ACCENT_COLOR if selected or self.favorite else TEXT_SECONDARY,
             )
+
+    def set_favorite(self, favorite):
+        self.favorite = favorite
+        if self.favorite_button:
+            self.favorite_button.configure(
+                text="★" if favorite else "☆",
+                text_color=WARNING_COLOR if favorite else TEXT_SECONDARY,
+            )
+        self.set_selected(self.selected)
 
     def _handle_click(self, _event=None):
         self.on_select(self.game.name)
@@ -300,6 +340,11 @@ class GameLibraryCard(ctk.CTkFrame):
             self.on_open(self.game.name)
         else:
             self.on_select(self.game.name)
+
+    def _handle_favorite(self, _event=None):
+        if self.on_favorite:
+            self.on_favorite(self.game.name)
+        return "break"
 
 
 class PathListEditor(ctk.CTkFrame):

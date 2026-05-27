@@ -78,6 +78,8 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self._library_grid_columns = 0
         self._library_grid_refresh_after = None
         self.library_cards = {}
+        self.home_library_cards = {}
+        self.library_filter = "all"
         self.library_mode = "collection"
         self._page_built = {}
 
@@ -381,6 +383,39 @@ class SaveManagerApp(get_dnd_ctk_base()):
         )
         self.library_meta.grid(row=1, column=0, sticky="ew", pady=(2, 0))
 
+        self.library_filter_frame = ctk.CTkFrame(self.library_top, fg_color="transparent")
+        self.library_filter_frame.grid(row=0, column=1, sticky="e", padx=(0, 8))
+        self.library_filter_frame.grid_columnconfigure(0, weight=0)
+        self.library_filter_frame.grid_columnconfigure(1, weight=0)
+
+        self.library_all_filter_button = ctk.CTkButton(
+            self.library_filter_frame,
+            text="Todos",
+            width=72,
+            height=34,
+            command=lambda: self._set_library_filter("all"),
+            fg_color=ACCENT_COLOR,
+            hover_color=ACCENT_HOVER,
+            text_color=TEXT_PRIMARY,
+            border_width=1,
+            border_color=BORDER_COLOR,
+        )
+        self.library_all_filter_button.grid(row=0, column=0, sticky="e")
+
+        self.library_favorites_filter_button = ctk.CTkButton(
+            self.library_filter_frame,
+            text="Favoritos",
+            width=92,
+            height=34,
+            command=lambda: self._set_library_filter("favorites"),
+            fg_color=SURFACE_SECONDARY,
+            hover_color=SURFACE_TERTIARY,
+            text_color=TEXT_SECONDARY,
+            border_width=1,
+            border_color=BORDER_COLOR,
+        )
+        self.library_favorites_filter_button.grid(row=0, column=1, sticky="e", padx=(6, 0))
+
         self.favorite_button = ctk.CTkButton(
             self.library_top,
             text="[ ]",
@@ -393,7 +428,6 @@ class SaveManagerApp(get_dnd_ctk_base()):
             border_width=1,
             border_color=BORDER_COLOR,
         )
-        self.favorite_button.grid(row=0, column=1, sticky="e", padx=(0, 8))
 
         self.manage_games_button = ctk.CTkButton(
             self.library_top,
@@ -1322,12 +1356,23 @@ class SaveManagerApp(get_dnd_ctk_base()):
         if hasattr(self, "home_library_frame"):
             for widget in self.home_library_frame.winfo_children():
                 widget.destroy()
+            self.home_library_cards = {}
 
-        games = listar_jogos_biblioteca(query)
+        all_filtered_games = listar_jogos_biblioteca(query)
+        games = [
+            game for game in all_filtered_games
+            if self.library_filter == "all" or game.favorite
+        ]
         total_games = len(listar_jogos_biblioteca(""))
+        favorite_total = len([game for game in listar_jogos_biblioteca("") if game.favorite])
         self.library_meta.configure(
-            text=f"{len(games)} de {total_games} jogo(s)" if query else f"{total_games} jogo(s) na coleção"
+            text=(
+                f"{len(games)} favorito(s)"
+                if self.library_filter == "favorites"
+                else (f"{len(games)} de {total_games} jogo(s)" if query else f"{total_games} jogo(s) na coleção")
+            )
         )
+        self._update_library_filter_buttons(favorite_total)
         if not games:
             empty_state = ctk.CTkFrame(
                 self.game_library_frame,
@@ -1336,19 +1381,27 @@ class SaveManagerApp(get_dnd_ctk_base()):
             empty_state.grid(row=0, column=0, sticky="nsew", padx=24, pady=28)
             ctk.CTkLabel(
                 empty_state,
-                text="Biblioteca vazia" if not query else "Nenhum jogo encontrado",
+                text=(
+                    "Nenhum favorito ainda"
+                    if self.library_filter == "favorites"
+                    else ("Biblioteca vazia" if not query else "Nenhum jogo encontrado")
+                ),
                 font=("Segoe UI Bold", 22),
                 text_color=TEXT_PRIMARY,
                 anchor="w",
             ).grid(row=0, column=0, sticky="w")
             ctk.CTkLabel(
                 empty_state,
-                text="Cadastre jogos para montar sua coleção." if not query else "Tente outro termo de busca.",
+                text=(
+                    "Marque uma estrela nos cards para fixar jogos aqui."
+                    if self.library_filter == "favorites"
+                    else ("Cadastre jogos para montar sua coleção." if not query else "Tente outro termo de busca.")
+                ),
                 font=("Segoe UI", 13),
                 text_color=TEXT_SECONDARY,
                 anchor="w",
             ).grid(row=1, column=0, sticky="w", pady=(6, 14))
-            if not query:
+            if not query and self.library_filter == "all":
                 ctk.CTkButton(
                     empty_state,
                     text="Gerenciar jogos",
@@ -1375,6 +1428,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
                 selected=game.name == self.current_game,
                 on_select=self._select_game_from_card,
                 on_open=self._open_game_from_card,
+                on_favorite=self._toggle_favorite_from_card,
                 profile_count=profile_count,
                 compact=True,
             )
@@ -1388,9 +1442,35 @@ class SaveManagerApp(get_dnd_ctk_base()):
                     selected=game.name == self.current_game,
                     on_select=self._open_game_from_card,
                     on_open=self._open_game_from_card,
+                    on_favorite=self._toggle_favorite_from_card,
                     profile_count=profile_count,
                 )
                 home_card.grid(row=0, column=index, sticky="ns", padx=(12 if index == 0 else 0, 12), pady=12)
+                self.home_library_cards[game.name] = home_card
+
+    def _set_library_filter(self, filter_name):
+        if filter_name not in {"all", "favorites"} or filter_name == self.library_filter:
+            return
+
+        self.library_filter = filter_name
+        self._update_library_filter_buttons()
+        self._refresh_game_library_cards(self.game_search.get().strip() if hasattr(self, "game_search") else "")
+
+    def _update_library_filter_buttons(self, favorite_total=None):
+        if not hasattr(self, "library_all_filter_button"):
+            return
+
+        self.library_all_filter_button.configure(
+            fg_color=ACCENT_COLOR if self.library_filter == "all" else SURFACE_SECONDARY,
+            hover_color=ACCENT_HOVER if self.library_filter == "all" else SURFACE_TERTIARY,
+            text_color=TEXT_PRIMARY if self.library_filter == "all" else TEXT_SECONDARY,
+        )
+        self.library_favorites_filter_button.configure(
+            text="Favoritos" if favorite_total is None else f"Favoritos {favorite_total}",
+            fg_color=ACCENT_COLOR if self.library_filter == "favorites" else SURFACE_SECONDARY,
+            hover_color=ACCENT_HOVER if self.library_filter == "favorites" else SURFACE_TERTIARY,
+            text_color=TEXT_PRIMARY if self.library_filter == "favorites" else TEXT_SECONDARY,
+        )
 
     def _select_game_from_card(self, selected_game):
         if self.busy:
@@ -1682,12 +1762,41 @@ class SaveManagerApp(get_dnd_ctk_base()):
             return
 
         favorite = alternar_favorito_jogo(self.current_game)
-        self._refresh_game_selector()
+        self._sync_favorite_visual(self.current_game, favorite)
         self._refresh_library_game_context()
         self._set_status(
             f"Jogo '{self.current_game}' {'favoritado' if favorite else 'removido dos favoritos'}.",
             "success",
         )
+
+    def _toggle_favorite_from_card(self, game_name):
+        if self.busy:
+            return
+
+        favorite = alternar_favorito_jogo(game_name)
+        self._sync_favorite_visual(game_name, favorite)
+        if self.current_game == game_name:
+            self._refresh_library_game_context()
+
+        if self.library_filter == "favorites" and not favorite:
+            self._refresh_game_library_cards(self.game_search.get().strip() if hasattr(self, "game_search") else "")
+
+        self._set_status(
+            f"Jogo '{game_name}' {'favoritado' if favorite else 'removido dos favoritos'}.",
+            "success",
+        )
+
+    def _sync_favorite_visual(self, game_name, favorite):
+        card = self.library_cards.get(game_name)
+        if card and card.winfo_exists():
+            card.set_favorite(favorite)
+
+        home_card = self.home_library_cards.get(game_name)
+        if home_card and home_card.winfo_exists():
+            home_card.set_favorite(favorite)
+
+        favorite_total = len([game for game in listar_jogos_biblioteca("") if game.favorite])
+        self._update_library_filter_buttons(favorite_total)
 
     def _open_game_manager(self):
         if self.busy:

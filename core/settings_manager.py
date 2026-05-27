@@ -45,6 +45,19 @@ def listar_favoritos():
     return carregar_configuracoes().get("favorite_games", [])
 
 
+def limpar_favoritos_orfaos(jogos_validos):
+    jogos_validos = set(jogos_validos)
+    config = carregar_configuracoes()
+    favoritos = config.setdefault("favorite_games", [])
+    favoritos_filtrados = [jogo for jogo in favoritos if jogo in jogos_validos]
+
+    if favoritos_filtrados != favoritos:
+        config["favorite_games"] = favoritos_filtrados
+        salvar_configuracoes(config)
+
+    return favoritos_filtrados
+
+
 def alternar_favorito(jogo):
     config = carregar_configuracoes()
     favoritos = config.setdefault("favorite_games", [])
