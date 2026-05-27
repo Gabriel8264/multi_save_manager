@@ -164,6 +164,10 @@ class GameLibraryCard(ctk.CTkFrame):
         self.on_open = on_open
         self.profile_count = profile_count
         self.compact = compact
+        self.selected = selected
+        self.placeholder_label = None
+        self.details_label = None
+        self.status_label = None
         self.grid_propagate(False)
         self.grid_columnconfigure(0, weight=1)
 
@@ -210,6 +214,7 @@ class GameLibraryCard(ctk.CTkFrame):
             font=("Segoe UI Bold", 18 if self.compact else 24),
             text_color=ACCENT_COLOR if selected else TEXT_SECONDARY,
         )
+        self.placeholder_label = placeholder
         placeholder.grid(row=0, column=0, sticky="nsew")
         self._bind_click(placeholder)
         self._bind_open(placeholder)
@@ -239,6 +244,7 @@ class GameLibraryCard(ctk.CTkFrame):
             text_color=ACCENT_COLOR if selected and self.compact else TEXT_SECONDARY,
             anchor="w",
         )
+        self.details_label = details
         details.grid(row=2, column=0, sticky="ew", padx=9, pady=(2, 8 if self.compact else 0))
         self._bind_click(details)
         self._bind_open(details)
@@ -253,9 +259,38 @@ class GameLibraryCard(ctk.CTkFrame):
             text_color=ACCENT_COLOR if selected or self.game.favorite else TEXT_SECONDARY,
             anchor="w",
         )
+        self.status_label = status
         status.grid(row=3, column=0, sticky="ew", padx=9, pady=(0, 6))
         self._bind_click(status)
         self._bind_open(status)
+
+    def set_selected(self, selected):
+        self.selected = selected
+        self.configure(
+            border_width=2 if selected else 1,
+            border_color=ACCENT_COLOR if selected else BORDER_COLOR,
+        )
+
+        if self.placeholder_label:
+            self.placeholder_label.configure(text_color=ACCENT_COLOR if selected else TEXT_SECONDARY)
+
+        save_count = self.profile_count if self.profile_count is not None else len(self.game.save_paths)
+        status_text = "Selecionado" if selected else ("Favorito" if self.game.favorite else "Pronto")
+        details_text = f"{save_count} save(s)"
+        if self.compact:
+            details_text = f"{details_text} · {status_text}"
+
+        if self.details_label:
+            self.details_label.configure(
+                text=details_text,
+                text_color=ACCENT_COLOR if selected and self.compact else TEXT_SECONDARY,
+            )
+
+        if self.status_label:
+            self.status_label.configure(
+                text=status_text,
+                text_color=ACCENT_COLOR if selected or self.game.favorite else TEXT_SECONDARY,
+            )
 
     def _handle_click(self, _event=None):
         self.on_select(self.game.name)

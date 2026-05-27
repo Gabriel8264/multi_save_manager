@@ -1,4 +1,5 @@
 ﻿import threading
+import os
 import tkinter.filedialog as filedialog
 import tkinter.messagebox as messagebox
 from pathlib import Path
@@ -70,11 +71,14 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self.current_page = "library"
         self.game_manager = None
         self._game_manager_open_after = None
+        self._game_manager_initial_game = None
         self._compact_layout = False
         self._compact_header = False
         self._compact_game_controls = False
         self._library_grid_columns = 0
         self._library_grid_refresh_after = None
+        self.library_cards = {}
+        self.library_mode = "collection"
         self._page_built = {}
 
         self.dnd_context = enable_tkdnd(self)
@@ -254,6 +258,8 @@ class SaveManagerApp(get_dnd_ctk_base()):
             page_name = "library"
 
         self._show_page(page_name)
+        if page_name == "library" and hasattr(self, "library_game_page"):
+            self._show_library_collection()
 
     def _show_page(self, page_name):
         self.current_page = page_name
@@ -347,13 +353,13 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self.game_card.grid_columnconfigure(0, weight=1)
         self.game_card.grid_rowconfigure(2, weight=1)
 
-        library_top = ctk.CTkFrame(self.game_card, fg_color="transparent")
-        library_top.grid(row=0, column=0, sticky="ew", padx=16, pady=(14, 8))
-        library_top.grid_columnconfigure(0, weight=1)
-        library_top.grid_columnconfigure(1, weight=0)
-        library_top.grid_columnconfigure(2, weight=0)
+        self.library_top = ctk.CTkFrame(self.game_card, fg_color="transparent")
+        self.library_top.grid(row=0, column=0, sticky="ew", padx=16, pady=(14, 8))
+        self.library_top.grid_columnconfigure(0, weight=1)
+        self.library_top.grid_columnconfigure(1, weight=0)
+        self.library_top.grid_columnconfigure(2, weight=0)
 
-        title_block = ctk.CTkFrame(library_top, fg_color="transparent")
+        title_block = ctk.CTkFrame(self.library_top, fg_color="transparent")
         title_block.grid(row=0, column=0, sticky="ew", padx=(0, 14))
         title_block.grid_columnconfigure(0, weight=1)
 
@@ -376,7 +382,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self.library_meta.grid(row=1, column=0, sticky="ew", pady=(2, 0))
 
         self.favorite_button = ctk.CTkButton(
-            library_top,
+            self.library_top,
             text="[ ]",
             width=44,
             height=34,
@@ -390,7 +396,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self.favorite_button.grid(row=0, column=1, sticky="e", padx=(0, 8))
 
         self.manage_games_button = ctk.CTkButton(
-            library_top,
+            self.library_top,
             text="Gerenciar jogos",
             width=138,
             height=34,
@@ -427,7 +433,204 @@ class SaveManagerApp(get_dnd_ctk_base()):
 
         self.game_paths_label = ctk.CTkLabel(self.game_card, text="")
         self.game_selector = None
+        self._build_library_game_context()
         self._page_built["library"] = True
+
+    def _build_library_game_context(self):
+        self.library_game_page = ctk.CTkFrame(
+            self.game_card,
+            fg_color=SURFACE_PRIMARY,
+            corner_radius=18,
+        )
+        self.library_game_page.grid(row=0, column=0, rowspan=3, sticky="nsew")
+        self.library_game_page.grid_columnconfigure(0, weight=1)
+        self.library_game_page.grid_rowconfigure(1, weight=1)
+
+        context_top = ctk.CTkFrame(self.library_game_page, fg_color="transparent")
+        context_top.grid(row=0, column=0, sticky="ew", padx=18, pady=(14, 10))
+        context_top.grid_columnconfigure(1, weight=1)
+
+        self.library_back_button = ctk.CTkButton(
+            context_top,
+            text="Voltar para biblioteca",
+            command=self._show_library_collection,
+            width=160,
+            height=34,
+            fg_color=SURFACE_SECONDARY,
+            hover_color=SURFACE_TERTIARY,
+            text_color=TEXT_PRIMARY,
+            border_width=1,
+            border_color=BORDER_COLOR,
+        )
+        self.library_back_button.grid(row=0, column=0, sticky="w", padx=(0, 12))
+
+        self.library_game_context_label = ctk.CTkLabel(
+            context_top,
+            text="Página do jogo",
+            font=("Segoe UI", 12),
+            text_color=TEXT_SECONDARY,
+            anchor="w",
+        )
+        self.library_game_context_label.grid(row=0, column=1, sticky="ew")
+
+        self.library_game_manage_button = ctk.CTkButton(
+            context_top,
+            text="Gerenciar jogo",
+            command=self._open_current_game_in_manager,
+            width=132,
+            height=34,
+            fg_color=SURFACE_SECONDARY,
+            hover_color=SURFACE_TERTIARY,
+            text_color=TEXT_PRIMARY,
+            border_width=1,
+            border_color=BORDER_COLOR,
+        )
+        self.library_game_manage_button.grid(row=0, column=2, sticky="e")
+
+        body = ctk.CTkFrame(self.library_game_page, fg_color="transparent")
+        body.grid(row=1, column=0, sticky="nsew", padx=18, pady=(0, 18))
+        body.grid_columnconfigure(0, weight=2)
+        body.grid_columnconfigure(1, weight=3)
+        body.grid_rowconfigure(1, weight=1)
+
+        hero = ctk.CTkFrame(
+            body,
+            fg_color=SURFACE_TERTIARY,
+            corner_radius=18,
+            border_width=1,
+            border_color=BORDER_COLOR,
+        )
+        hero.grid(row=0, column=0, rowspan=2, sticky="nsew", padx=(0, 14))
+        hero.grid_columnconfigure(0, weight=1)
+        hero.grid_rowconfigure(0, weight=1)
+
+        self.library_game_cover_label = ctk.CTkLabel(
+            hero,
+            text="JG",
+            font=("Segoe UI Bold", 44),
+            text_color=ACCENT_COLOR,
+        )
+        self.library_game_cover_label.grid(row=0, column=0, sticky="nsew", padx=18, pady=18)
+
+        info = ctk.CTkFrame(body, fg_color="transparent")
+        info.grid(row=0, column=1, sticky="ew")
+        info.grid_columnconfigure(0, weight=1)
+
+        self.library_game_title = ctk.CTkLabel(
+            info,
+            text="Nenhum jogo",
+            font=("Segoe UI Bold", 28),
+            text_color=TEXT_PRIMARY,
+            anchor="w",
+        )
+        self.library_game_title.grid(row=0, column=0, sticky="ew")
+
+        self.library_game_summary = ctk.CTkLabel(
+            info,
+            text="Selecione um jogo para abrir seu contexto.",
+            font=("Segoe UI", 13),
+            text_color=TEXT_SECONDARY,
+            anchor="w",
+        )
+        self.library_game_summary.grid(row=1, column=0, sticky="ew", pady=(4, 12))
+
+        action_row = ctk.CTkFrame(info, fg_color="transparent")
+        action_row.grid(row=2, column=0, sticky="ew")
+        action_row.grid_columnconfigure(0, weight=1)
+        action_row.grid_columnconfigure(1, weight=1)
+        action_row.grid_columnconfigure(2, weight=1)
+
+        self.library_play_button = ctk.CTkButton(
+            action_row,
+            text="Jogar",
+            command=self._play_current_game_placeholder,
+            height=40,
+            fg_color=ACCENT_COLOR,
+            hover_color=ACCENT_HOVER,
+        )
+        self.library_play_button.grid(row=0, column=0, sticky="ew", padx=(0, 8))
+
+        self.library_open_paths_button = ctk.CTkButton(
+            action_row,
+            text="Abrir pastas",
+            command=self._open_current_game_paths,
+            height=40,
+            fg_color=SURFACE_SECONDARY,
+            hover_color=SURFACE_TERTIARY,
+            text_color=TEXT_PRIMARY,
+            border_width=1,
+            border_color=BORDER_COLOR,
+        )
+        self.library_open_paths_button.grid(row=0, column=1, sticky="ew", padx=8)
+
+        self.library_favorite_button = ctk.CTkButton(
+            action_row,
+            text="Favoritar",
+            command=self._toggle_favorite_game,
+            height=40,
+            fg_color=SURFACE_SECONDARY,
+            hover_color=SURFACE_TERTIARY,
+            text_color=TEXT_PRIMARY,
+            border_width=1,
+            border_color=BORDER_COLOR,
+        )
+        self.library_favorite_button.grid(row=0, column=2, sticky="ew", padx=(8, 0))
+
+        details = ctk.CTkFrame(body, fg_color="transparent")
+        details.grid(row=1, column=1, sticky="nsew", pady=(14, 0))
+        details.grid_columnconfigure(0, weight=1)
+        details.grid_columnconfigure(1, weight=1)
+        details.grid_rowconfigure(1, weight=1)
+
+        self.library_saves_stat = self._build_library_stat_card(details, 0, 0, "Saves", "0 perfil(is)")
+        self.library_paths_stat = self._build_library_stat_card(details, 0, 1, "Diretórios", "0 pasta(s)")
+
+        future = ctk.CTkFrame(
+            details,
+            fg_color=SURFACE_SECONDARY,
+            corner_radius=14,
+            border_width=1,
+            border_color=BORDER_COLOR,
+        )
+        future.grid(row=1, column=0, columnspan=2, sticky="nsew", pady=(12, 0))
+        future.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(
+            future,
+            text="Espaço preparado para mods, automações, backups e opções de inicialização.",
+            font=("Segoe UI", 13),
+            text_color=TEXT_SECONDARY,
+            anchor="w",
+            wraplength=520,
+        ).grid(row=0, column=0, sticky="ew", padx=16, pady=16)
+
+        self.library_game_page.grid_remove()
+
+    def _build_library_stat_card(self, master, row, column, title, value):
+        card = ctk.CTkFrame(
+            master,
+            fg_color=SURFACE_SECONDARY,
+            corner_radius=14,
+            border_width=1,
+            border_color=BORDER_COLOR,
+        )
+        card.grid(row=row, column=column, sticky="ew", padx=(0, 6) if column == 0 else (6, 0))
+        card.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(
+            card,
+            text=title,
+            font=("Segoe UI", 12),
+            text_color=TEXT_SECONDARY,
+            anchor="w",
+        ).grid(row=0, column=0, sticky="ew", padx=14, pady=(12, 2))
+        value_label = ctk.CTkLabel(
+            card,
+            text=value,
+            font=("Segoe UI Semibold", 16),
+            text_color=TEXT_PRIMARY,
+            anchor="w",
+        )
+        value_label.grid(row=1, column=0, sticky="ew", padx=14, pady=(0, 12))
+        return value_label
 
     def _build_game_page(self):
         if self._page_built.get("game"):
@@ -1115,6 +1318,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
     def _refresh_game_library_cards(self, query=""):
         for widget in self.game_library_frame.winfo_children():
             widget.destroy()
+        self.library_cards = {}
         if hasattr(self, "home_library_frame"):
             for widget in self.home_library_frame.winfo_children():
                 widget.destroy()
@@ -1175,6 +1379,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
                 compact=True,
             )
             card.grid(row=row, column=column, sticky="nw", padx=6, pady=6)
+            self.library_cards[game.name] = card
 
             if hasattr(self, "home_library_frame") and index < 6:
                 home_card = GameLibraryCard(
@@ -1191,29 +1396,117 @@ class SaveManagerApp(get_dnd_ctk_base()):
         if self.busy:
             return
 
+        previous_game = self.current_game
         if selected_game != self.current_game:
             self._on_game_selected(selected_game)
-        self._refresh_game_library_cards(self.game_search.get().strip() if hasattr(self, "game_search") else "")
+        self._update_library_card_selection(previous_game, selected_game)
 
     def _open_game_from_card(self, selected_game):
-        self._select_game_from_card(selected_game)
         if self.busy:
             return
-        self._show_page("game")
+
+        previous_game = self.current_game
+        if selected_game != self.current_game:
+            self._on_game_selected(selected_game)
+        self._update_library_card_selection(previous_game, selected_game)
+        self._show_library_game_context()
+
+    def _update_library_card_selection(self, previous_game, selected_game):
+        if previous_game and previous_game != selected_game:
+            previous_card = self.library_cards.get(previous_game)
+            if previous_card and previous_card.winfo_exists():
+                previous_card.set_selected(False)
+
+        selected_card = self.library_cards.get(selected_game)
+        if selected_card and selected_card.winfo_exists():
+            selected_card.set_selected(True)
+
+    def _show_library_collection(self):
+        self.library_mode = "collection"
+        self.library_game_page.grid_remove()
+        self.library_top.grid()
+        self.game_search.grid()
+        self.game_library_frame.grid()
+        self.library_title.configure(text="Biblioteca")
+        query = self.game_search.get().strip() if hasattr(self, "game_search") else ""
+        self._refresh_game_library_cards(query)
+
+    def _show_library_game_context(self):
+        if not self.current_game:
+            return
+
+        self.library_mode = "game"
+        self.library_top.grid_remove()
+        self.game_search.grid_remove()
+        self.game_library_frame.grid_remove()
+        self._refresh_library_game_context()
+        self.library_game_page.grid()
+        self.library_game_page.tkraise()
+
+    def _refresh_library_game_context(self):
+        if not hasattr(self, "library_game_page") or not self.current_game:
+            return
+
+        paths = obter_diretorios_jogo(self.current_game)
+        profiles = listar_perfis(self.current_game)
+        valid_paths = [path for path in paths if Path(path).is_dir()]
+        invalid_count = max(0, len(paths) - len(valid_paths))
+        initials = "".join(part[:1] for part in self.current_game.split()[:2]).upper() or "JG"
+
+        self.library_game_cover_label.configure(text=initials)
+        self.library_game_title.configure(text=self.current_game)
+        self.library_game_summary.configure(
+            text=f"{len(profiles)} perfil(is) de save · {len(paths)} diretório(s) cadastrado(s)"
+        )
+        self.library_saves_stat.configure(text=f"{len(profiles)} perfil(is)")
+        path_status = f"{len(valid_paths)}/{len(paths)} pasta(s) ok" if paths else "Nenhuma pasta"
+        if invalid_count:
+            path_status += f" · {invalid_count} inválida(s)"
+        self.library_paths_stat.configure(text=path_status)
+        favorite = jogo_eh_favorito(self.current_game)
+        self.library_favorite_button.configure(text="Favorito" if favorite else "Favoritar")
+        self.library_open_paths_button.configure(state="normal" if valid_paths else "disabled")
+        self.library_play_button.configure(state="normal")
+
+    def _open_current_game_paths(self):
+        if not self.current_game:
+            return
+
+        opened = 0
+        for raw_path in obter_diretorios_jogo(self.current_game):
+            path = Path(raw_path)
+            if path.is_dir():
+                os.startfile(path)
+                opened += 1
+
+        if opened:
+            self._set_status(f"{opened} pasta(s) de '{self.current_game}' abertas.", "success")
+        else:
+            self._set_status("Nenhuma pasta válida para abrir.", "warning")
+
+    def _open_current_game_in_manager(self):
+        if not self.current_game:
+            return
+
+        self._game_manager_initial_game = self.current_game
+        self._open_game_manager()
 
     def _update_current_game_details(self):
         if not self.current_game:
             if hasattr(self, "game_paths_label"):
                 self.game_paths_label.configure(text="")
-            self.favorite_button.configure(text="[ ]", state="disabled")
-            self.library_meta.configure(text="Coleção de jogos")
+            if hasattr(self, "favorite_button"):
+                self.favorite_button.configure(text="[ ]", state="disabled")
+            if hasattr(self, "library_meta"):
+                self.library_meta.configure(text="Coleção de jogos")
             self._refresh_game_panel()
             return
 
-        self.favorite_button.configure(
-            text="[*]" if jogo_eh_favorito(self.current_game) else "[ ]",
-            state="normal",
-        )
+        if hasattr(self, "favorite_button"):
+            self.favorite_button.configure(
+                text="[*]" if jogo_eh_favorito(self.current_game) else "[ ]",
+                state="normal",
+            )
         paths = obter_diretorios_jogo(self.current_game)
         preview = ", ".join(Path(path).name or path for path in paths[:2])
         if len(paths) > 2:
@@ -1222,6 +1515,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
         if hasattr(self, "game_paths_label"):
             self.game_paths_label.configure(text="")
         self._refresh_game_panel(paths)
+        self._refresh_library_game_context()
 
     def _refresh_game_panel(self, paths=None):
         if not self.current_game:
@@ -1389,6 +1683,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
 
         favorite = alternar_favorito_jogo(self.current_game)
         self._refresh_game_selector()
+        self._refresh_library_game_context()
         self._set_status(
             f"Jogo '{self.current_game}' {'favoritado' if favorite else 'removido dos favoritos'}.",
             "success",
@@ -1399,6 +1694,9 @@ class SaveManagerApp(get_dnd_ctk_base()):
             return
 
         if self.game_manager and self.game_manager.winfo_exists():
+            if self._game_manager_initial_game:
+                self.game_manager.refresh(selected_game=self._game_manager_initial_game)
+                self._game_manager_initial_game = None
             self.game_manager.lift()
             self.game_manager.focus_set()
             return
@@ -1427,6 +1725,9 @@ class SaveManagerApp(get_dnd_ctk_base()):
             on_save=self._save_game_from_manager,
             on_delete=self._delete_game_from_manager,
         )
+        if self._game_manager_initial_game:
+            self.game_manager.refresh(selected_game=self._game_manager_initial_game)
+            self._game_manager_initial_game = None
 
     def _ask_profile_name(self, title, initial_value=""):
         dialog = PromptDialog(
