@@ -2,9 +2,11 @@ import json
 from pathlib import Path
 
 SETTINGS_FILE = Path("settings.json")
+MAX_RECENT_GAMES = 12
 DEFAULT_SETTINGS = {
     "ui_theme": "dark",
     "favorite_games": [],
+    "recent_games": [],
 }
 
 
@@ -19,6 +21,7 @@ def carregar_configuracoes():
     merged = DEFAULT_SETTINGS.copy()
     merged.update(data)
     merged["favorite_games"] = list(dict.fromkeys(merged.get("favorite_games", [])))
+    merged["recent_games"] = list(dict.fromkeys(merged.get("recent_games", [])))[:MAX_RECENT_GAMES]
     return merged
 
 
@@ -45,6 +48,10 @@ def listar_favoritos():
     return carregar_configuracoes().get("favorite_games", [])
 
 
+def listar_recentes():
+    return carregar_configuracoes().get("recent_games", [])
+
+
 def limpar_favoritos_orfaos(jogos_validos):
     jogos_validos = set(jogos_validos)
     config = carregar_configuracoes()
@@ -56,6 +63,19 @@ def limpar_favoritos_orfaos(jogos_validos):
         salvar_configuracoes(config)
 
     return favoritos_filtrados
+
+
+def limpar_recentes_orfaos(jogos_validos):
+    jogos_validos = set(jogos_validos)
+    config = carregar_configuracoes()
+    recentes = config.setdefault("recent_games", [])
+    recentes_filtrados = [jogo for jogo in recentes if jogo in jogos_validos][:MAX_RECENT_GAMES]
+
+    if recentes_filtrados != recentes:
+        config["recent_games"] = recentes_filtrados
+        salvar_configuracoes(config)
+
+    return recentes_filtrados
 
 
 def alternar_favorito(jogo):
@@ -74,6 +94,15 @@ def alternar_favorito(jogo):
     return favorito
 
 
+def registrar_recente(jogo):
+    config = carregar_configuracoes()
+    recentes = [nome for nome in config.setdefault("recent_games", []) if nome != jogo]
+    recentes.insert(0, jogo)
+    config["recent_games"] = recentes[:MAX_RECENT_GAMES]
+    salvar_configuracoes(config)
+    return config["recent_games"]
+
+
 def eh_favorito(jogo):
     return jogo in listar_favoritos()
 
@@ -87,6 +116,15 @@ def remover_jogo_dos_favoritos(jogo):
         salvar_configuracoes(config)
 
 
+def remover_jogo_dos_recentes(jogo):
+    config = carregar_configuracoes()
+    recentes = config.setdefault("recent_games", [])
+
+    if jogo in recentes:
+        recentes.remove(jogo)
+        salvar_configuracoes(config)
+
+
 def renomear_jogo_nos_favoritos(nome_atual, novo_nome):
     config = carregar_configuracoes()
     favoritos = config.setdefault("favorite_games", [])
@@ -96,4 +134,14 @@ def renomear_jogo_nos_favoritos(nome_atual, novo_nome):
         if novo_nome not in favoritos:
             favoritos.append(novo_nome)
             favoritos.sort(key=str.lower)
+        salvar_configuracoes(config)
+
+
+def renomear_jogo_nos_recentes(nome_atual, novo_nome):
+    config = carregar_configuracoes()
+    recentes = config.setdefault("recent_games", [])
+
+    if nome_atual in recentes:
+        recentes = [novo_nome if jogo == nome_atual else jogo for jogo in recentes]
+        config["recent_games"] = list(dict.fromkeys(recentes))[:MAX_RECENT_GAMES]
         salvar_configuracoes(config)

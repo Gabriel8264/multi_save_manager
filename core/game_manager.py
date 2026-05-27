@@ -18,8 +18,11 @@ from .settings_manager import (
     alternar_favorito,
     eh_favorito,
     limpar_favoritos_orfaos,
+    limpar_recentes_orfaos,
     remover_jogo_dos_favoritos,
+    remover_jogo_dos_recentes,
     renomear_jogo_nos_favoritos,
+    renomear_jogo_nos_recentes,
 )
 from .validators import validate_game_name, validate_save_paths
 
@@ -93,6 +96,12 @@ def listar_nomes_jogos(query=""):
     return [jogo.name for jogo in listar_jogos_biblioteca(query)]
 
 
+def listar_jogos_recentes_biblioteca():
+    jogos = {jogo.name: jogo for jogo in listar_jogos_biblioteca("")}
+    recentes = limpar_recentes_orfaos(jogos.keys())
+    return [jogos[nome] for nome in recentes if nome in jogos]
+
+
 def jogo_eh_favorito(jogo):
     return eh_favorito(jogo)
 
@@ -127,6 +136,7 @@ def salvar_jogo(nome_atual, novo_nome, diretorios):
         if nome_atual != novo_nome:
             renomear_jogo_em_perfis(nome_atual, novo_nome)
             renomear_jogo_nos_favoritos(nome_atual, novo_nome)
+            renomear_jogo_nos_recentes(nome_atual, novo_nome)
     except Exception:
         if nome_atual != novo_nome:
             try:
@@ -135,6 +145,10 @@ def salvar_jogo(nome_atual, novo_nome, diretorios):
                 pass
             try:
                 renomear_jogo_nos_favoritos(novo_nome, nome_atual)
+            except Exception:
+                pass
+            try:
+                renomear_jogo_nos_recentes(novo_nome, nome_atual)
             except Exception:
                 pass
             try:
@@ -149,4 +163,5 @@ def salvar_jogo(nome_atual, novo_nome, diretorios):
 def excluir_jogo_com_dados(jogo, progress_callback=None):
     excluir_jogo_dos_perfis(jogo, progress_callback=progress_callback)
     remover_jogo_dos_favoritos(jogo)
+    remover_jogo_dos_recentes(jogo)
     return excluir_jogo(jogo)
