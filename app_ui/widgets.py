@@ -565,7 +565,7 @@ class PathListEditor(ctk.CTkFrame):
         self.label.grid(row=0, column=0, sticky="ew", pady=(0, 5))
 
         self.toolbar = ctk.CTkFrame(self, fg_color="transparent")
-        self.toolbar.grid(row=1, column=0, sticky="ew", pady=(0, 6))
+        self.toolbar.grid(row=1, column=0, sticky="ew", pady=(0, 5))
         self.toolbar.grid_columnconfigure(0, weight=1)
         self.toolbar.grid_columnconfigure(1, weight=1)
 
@@ -575,7 +575,7 @@ class PathListEditor(ctk.CTkFrame):
             command=self.browse_for_folder,
             fg_color=ACCENT_COLOR,
             hover_color=ACCENT_HOVER,
-            height=36,
+            height=32,
         )
         self.add_button.grid(row=0, column=0, padx=(0, 8), sticky="ew")
 
@@ -588,19 +588,19 @@ class PathListEditor(ctk.CTkFrame):
             text_color=TEXT_PRIMARY,
             border_width=1,
             border_color=BORDER_COLOR,
-            height=36,
+            height=32,
         )
         self.open_button.grid(row=0, column=1, padx=(8, 0), sticky="ew")
 
         self.drop_zone = tk.Frame(
             self,
-            height=38,
+            height=40,
             bg=_theme_color(SURFACE_TERTIARY),
             highlightthickness=1,
             highlightbackground=_theme_color(ACCENT_COLOR),
             highlightcolor=_theme_color(ACCENT_COLOR),
         )
-        self.drop_zone.grid(row=2, column=0, sticky="ew", pady=(0, 6))
+        self.drop_zone.grid(row=2, column=0, sticky="ew", pady=(2, 8))
         self.drop_zone.grid_propagate(False)
         self.drop_zone.grid_columnconfigure(0, weight=1)
 
@@ -612,7 +612,7 @@ class PathListEditor(ctk.CTkFrame):
             font=("Segoe UI", 12, "bold"),
             anchor="center",
         )
-        self.drop_zone_label.grid(row=0, column=0, sticky="nsew", padx=12, pady=5)
+        self.drop_zone_label.grid(row=0, column=0, sticky="nsew", padx=12, pady=7)
 
         self.textbox = ctk.CTkTextbox(
             self,

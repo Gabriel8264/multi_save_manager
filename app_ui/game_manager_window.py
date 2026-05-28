@@ -59,12 +59,10 @@ class GameManagerWindow(ctk.CTkToplevel):
         )
         self.shell.grid(row=0, column=0, sticky="nsew", padx=0, pady=0)
         self.shell.grid_columnconfigure(0, weight=1)
-        self.shell.grid_rowconfigure(1, weight=1)
-
-        self._build_titlebar()
+        self.shell.grid_rowconfigure(0, weight=1)
 
         self.body = ctk.CTkFrame(self.shell, fg_color="transparent")
-        self.body.grid(row=1, column=0, sticky="nsew", padx=14, pady=(0, 14))
+        self.body.grid(row=0, column=0, sticky="nsew", padx=14, pady=14)
         self.body.grid_columnconfigure(0, weight=2)
         self.body.grid_columnconfigure(1, weight=3)
         self.body.grid_rowconfigure(0, weight=1)
@@ -196,22 +194,6 @@ class GameManagerWindow(ctk.CTkToplevel):
             if child and child is not widget:
                 self._bind_mousewheel_tree(child, on_mousewheel, on_button_4, on_button_5, visited)
 
-    def _build_titlebar(self):
-        titlebar = ctk.CTkFrame(self.shell, fg_color="transparent")
-        titlebar.grid(row=0, column=0, sticky="ew", padx=18, pady=(14, 8))
-        titlebar.grid_columnconfigure(0, weight=1)
-
-        title_block = ctk.CTkFrame(titlebar, fg_color="transparent")
-        title_block.grid(row=0, column=0, sticky="ew")
-
-        ctk.CTkLabel(
-            title_block,
-            text="Gerenciar jogos",
-            font=("Segoe UI Bold", 22),
-            text_color=TEXT_PRIMARY,
-            anchor="w",
-        ).grid(row=0, column=0, sticky="w")
-
     def _build_game_list(self):
         self.left_panel = ctk.CTkFrame(
             self.body,
@@ -280,22 +262,23 @@ class GameManagerWindow(ctk.CTkToplevel):
         )
         self.right_panel.grid(row=0, column=1, sticky="nsew", padx=(7, 0), pady=0)
         self.right_panel.grid_columnconfigure(0, weight=1)
+        self.right_panel.grid_rowconfigure(0, weight=0)
+        self.right_panel.grid_rowconfigure(1, weight=0)
         self.right_panel.grid_rowconfigure(2, weight=0)
         self.right_panel.grid_rowconfigure(3, weight=0)
-        self.right_panel.grid_rowconfigure(4, weight=1)
+        self.right_panel.grid_rowconfigure(4, weight=1, minsize=190)
         self.right_panel.grid_rowconfigure(5, weight=0)
-        self.right_panel.grid_rowconfigure(6, weight=0)
 
         self.editor_header = ctk.CTkFrame(self.right_panel, fg_color="transparent")
-        self.editor_header.grid(row=0, column=0, sticky="ew", padx=18, pady=(14, 8))
+        self.editor_header.grid(row=0, column=0, sticky="ew", padx=18, pady=(10, 6))
         self.editor_header.grid_columnconfigure(1, weight=1)
 
         self.game_visual = ctk.CTkFrame(
             self.editor_header,
-            width=52,
-            height=52,
+            width=42,
+            height=42,
             fg_color=SURFACE_TERTIARY,
-            corner_radius=12,
+            corner_radius=10,
             border_width=1,
             border_color=ACCENT_COLOR,
         )
@@ -307,7 +290,7 @@ class GameManagerWindow(ctk.CTkToplevel):
         self.game_visual_label = ctk.CTkLabel(
             self.game_visual,
             text="+",
-            font=("Segoe UI Bold", 24),
+            font=("Segoe UI Bold", 21),
             text_color=ACCENT_COLOR,
         )
         self.game_visual_label.grid(row=0, column=0, sticky="nsew")
@@ -319,20 +302,11 @@ class GameManagerWindow(ctk.CTkToplevel):
         self.title_label = ctk.CTkLabel(
             self.title_stack,
             text="Adicionar jogo",
-            font=("Segoe UI Bold", 20),
+            font=("Segoe UI Bold", 18),
             text_color=TEXT_PRIMARY,
             anchor="w",
         )
         self.title_label.grid(row=0, column=0, sticky="ew")
-
-        self.mode_label = ctk.CTkLabel(
-            self.title_stack,
-            text="",
-            font=("Segoe UI", 12),
-            text_color=TEXT_SECONDARY,
-            anchor="w",
-        )
-        self.mode_label.grid(row=1, column=0, sticky="ew", pady=(4, 0))
 
         self.form_card = ctk.CTkFrame(
             self.right_panel,
@@ -341,7 +315,7 @@ class GameManagerWindow(ctk.CTkToplevel):
             border_width=1,
             border_color=BORDER_COLOR,
         )
-        self.form_card.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 6))
+        self.form_card.grid(row=1, column=0, sticky="ew", padx=18, pady=(0, 5))
         self.form_card.grid_columnconfigure(0, weight=1)
 
         self.name_field = ValidatedEntry(
@@ -350,18 +324,18 @@ class GameManagerWindow(ctk.CTkToplevel):
             placeholder_text="Ex.: Cyberpunk 2077",
             validator=validate_game_name,
         )
-        self.name_field.grid(row=0, column=0, sticky="ew", padx=12, pady=6)
-        self.name_field.entry.configure(height=36)
+        self.name_field.grid(row=0, column=0, sticky="ew", padx=10, pady=4)
+        self.name_field.entry.configure(height=32)
         self.name_field.error_label.configure(wraplength=480)
 
         self.launch_card = ctk.CTkFrame(
             self.right_panel,
             fg_color=SURFACE_PRIMARY,
-            corner_radius=14,
+            corner_radius=12,
             border_width=1,
             border_color=BORDER_COLOR,
         )
-        self.launch_card.grid(row=3, column=0, sticky="ew", padx=18, pady=(0, 6))
+        self.launch_card.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 5))
         self.launch_card.grid_columnconfigure(0, weight=1)
         self.launch_card.grid_columnconfigure(1, weight=0)
 
@@ -371,15 +345,7 @@ class GameManagerWindow(ctk.CTkToplevel):
             font=("Segoe UI Semibold", 14),
             text_color=TEXT_PRIMARY,
             anchor="w",
-        ).grid(row=0, column=0, columnspan=3, sticky="ew", padx=12, pady=(10, 2))
-
-        ctk.CTkLabel(
-            self.launch_card,
-            text="Arquivo .exe ou .bat usado pelo botão Jogar.",
-            font=("Segoe UI", 11),
-            text_color=TEXT_SECONDARY,
-            anchor="w",
-        ).grid(row=1, column=0, columnspan=3, sticky="ew", padx=12, pady=(0, 6))
+        ).grid(row=0, column=0, columnspan=3, sticky="ew", padx=10, pady=(7, 4))
 
         self.launch_path_label = ctk.CTkLabel(
             self.launch_card,
@@ -388,43 +354,51 @@ class GameManagerWindow(ctk.CTkToplevel):
             text_color=TEXT_SECONDARY,
             anchor="w",
         )
-        self.launch_path_label.grid(row=2, column=0, sticky="ew", padx=12, pady=(0, 8))
+        self.launch_path_label.grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 5))
 
         self.launch_select_button = ctk.CTkButton(
             self.launch_card,
             text="Selecionar arquivo",
             command=self._select_launch_file,
             width=132,
-            height=30,
+            height=28,
             fg_color=ACCENT_COLOR,
             hover_color=ACCENT_HOVER,
         )
-        self.launch_select_button.grid(row=2, column=1, sticky="e", padx=(8, 4), pady=(0, 8))
+        self.launch_select_button.grid(row=1, column=1, sticky="e", padx=(8, 4), pady=(0, 5))
 
         self.launch_clear_button = ctk.CTkButton(
             self.launch_card,
             text="Remover",
             command=self._clear_launch_file,
             width=78,
-            height=30,
+            height=28,
             fg_color=SURFACE_SECONDARY,
             hover_color=SURFACE_TERTIARY,
             text_color=TEXT_PRIMARY,
             border_width=1,
             border_color=BORDER_COLOR,
         )
-        self.launch_clear_button.grid(row=2, column=2, sticky="e", padx=(4, 12), pady=(0, 8))
+        self.launch_clear_button.grid(row=1, column=2, sticky="e", padx=(4, 10), pady=(0, 5))
+
+        self.launch_arguments_hint = ctk.CTkLabel(
+            self.launch_card,
+            text="Argumentos opcionais",
+            font=("Segoe UI", 10),
+            text_color=TEXT_SECONDARY,
+            anchor="w",
+        )
+        self.launch_arguments_hint.grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 2))
 
         self.launch_arguments_entry = ctk.CTkEntry(
             self.launch_card,
-            placeholder_text='Argumentos de inicialização (opcional)',
-            height=32,
+            height=30,
             corner_radius=10,
             fg_color=SURFACE_SECONDARY,
             border_color=BORDER_COLOR,
             text_color=TEXT_PRIMARY,
         )
-        self.launch_arguments_entry.grid(row=3, column=0, columnspan=3, sticky="ew", padx=12, pady=(0, 8))
+        self.launch_arguments_entry.grid(row=3, column=0, sticky="ew", padx=(10, 8), pady=(0, 7))
 
         self.launch_admin_var = ctk.BooleanVar(value=False)
         self.launch_admin_checkbox = ctk.CTkCheckBox(
@@ -435,22 +409,14 @@ class GameManagerWindow(ctk.CTkToplevel):
             checkbox_width=18,
             checkbox_height=18,
         )
-        self.launch_admin_checkbox.grid(row=4, column=0, columnspan=3, sticky="w", padx=12, pady=(0, 4))
-
-        ctk.CTkLabel(
-            self.launch_card,
-            text="Use apenas se o jogo, mod, .bat ou launcher externo precisar de permissão elevada.",
-            font=("Segoe UI", 10),
-            text_color=TEXT_SECONDARY,
-            anchor="w",
-        ).grid(row=5, column=0, columnspan=3, sticky="ew", padx=12, pady=(0, 10))
+        self.launch_admin_checkbox.grid(row=3, column=1, columnspan=2, sticky="w", padx=(0, 10), pady=(0, 7))
 
         self.launch_file_path = ""
 
         self.paths_editor = PathListEditor(
             self.right_panel,
             dnd_context=self.dnd_context,
-            textbox_height=104,
+            textbox_height=140,
             dialog_parent=self,
             on_validation_change=self._handle_field_validation_change,
         )
@@ -474,7 +440,7 @@ class GameManagerWindow(ctk.CTkToplevel):
             anchor="w",
             justify="left",
         )
-        self.status_label.grid(row=5, column=0, sticky="ew", padx=18, pady=(2, 8))
+        self.status_label.grid(row=5, column=0, sticky="ew", padx=18, pady=(0, 6))
 
         self.button_row = ctk.CTkFrame(self.right_panel, fg_color="transparent")
         self.button_row.grid(row=6, column=0, sticky="ew", padx=18, pady=(0, 14))
@@ -553,8 +519,7 @@ class GameManagerWindow(ctk.CTkToplevel):
         self.title_label.configure(text="Editar jogo")
         self.game_visual_label.configure(text=self._game_initials(game), text_color=TEXT_PRIMARY)
         self.game_visual.configure(fg_color=SURFACE_TERTIARY, border_color=ACCENT_COLOR)
-        self.status_label.configure(text=f"Editando '{game}'.")
-        self.mode_label.configure(text=game)
+        self.status_label.configure(text="", text_color=TEXT_SECONDARY)
         self.save_button.configure(text="Salvar alterações")
         self.save_button.grid_configure(column=0, columnspan=1, padx=(0, 8), sticky="ew")
         self.delete_button.grid()
@@ -571,7 +536,6 @@ class GameManagerWindow(ctk.CTkToplevel):
         self.game_visual_label.configure(text="+", text_color=ACCENT_COLOR)
         self.game_visual.configure(fg_color=SURFACE_TERTIARY, border_color=ACCENT_COLOR)
         self.status_label.configure(text="")
-        self.mode_label.configure(text="")
         self.save_button.configure(text="Adicionar jogo")
         self.save_button.grid_configure(column=0, columnspan=2, padx=0, sticky="ew")
         self.delete_button.grid_remove()
@@ -649,7 +613,7 @@ class GameManagerWindow(ctk.CTkToplevel):
 
         if self.selected_game:
             self.status_label.configure(
-                text=f"Editando '{self.selected_game}'.",
+                text="",
                 text_color=TEXT_SECONDARY,
             )
         else:

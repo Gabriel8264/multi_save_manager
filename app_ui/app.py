@@ -1996,14 +1996,21 @@ class SaveManagerApp(get_dnd_ctk_base()):
             return
 
         try:
-            self._set_status(f"Iniciando '{self.current_game}'...", "info")
-            launch_game(launch_config)
+            if launch_config.get("launch_as_admin"):
+                self._set_status(f"Solicitando UAC para iniciar '{self.current_game}'...", "info")
+            else:
+                self._set_status(f"Iniciando '{self.current_game}'...", "info")
+            launch_result = launch_game(launch_config)
         except LaunchCancelled as error:
             self._set_status(str(error), "info")
         except (LaunchError, ValueError, OSError) as error:
             self._set_status(str(error), "error")
         else:
-            self._set_status(f"'{self.current_game}' iniciado.", "success")
+            method = launch_result.get("method") if isinstance(launch_result, dict) else ""
+            if method == "elevated/runas":
+                self._set_status("Comando de elevação enviado ao Windows com sucesso.", "success")
+            else:
+                self._set_status(f"'{self.current_game}' iniciado.", "success")
 
     def _refresh_profiles(self):
         for widget in self.profile_list.winfo_children():
