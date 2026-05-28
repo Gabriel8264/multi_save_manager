@@ -661,7 +661,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self.left_panel.grid(row=0, column=0, sticky="nsew")
         self.left_panel.grid_columnconfigure(0, weight=1)
         self.left_panel.grid_rowconfigure(1, weight=1)
-        self.left_panel.grid_rowconfigure(4, weight=1)
+        self.left_panel.grid_rowconfigure(4, weight=0)
 
         self._build_game_hub()
         self._build_game_overview()
@@ -676,7 +676,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
             border_width=1,
             border_color=BORDER_COLOR,
         )
-        self.selected_card.grid(row=0, column=0, sticky="ew", padx=18, pady=(18, 14))
+        self.selected_card.grid(row=0, column=0, sticky="ew", padx=18, pady=(14, 10))
         self.selected_card.grid_columnconfigure(0, weight=2)
         self.selected_card.grid_columnconfigure(1, weight=1)
         self.selected_card.grid_columnconfigure(2, weight=0)
@@ -687,11 +687,11 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self.game_panel_title = ctk.CTkLabel(
             self.selected_card,
             text="Nenhum jogo",
-            font=("Segoe UI Bold", 24),
+            font=("Segoe UI Bold", 22),
             text_color=TEXT_PRIMARY,
             anchor="w",
         )
-        self.game_panel_title.grid(row=0, column=0, sticky="ew", padx=(16, 10), pady=(12, 2))
+        self.game_panel_title.grid(row=0, column=0, sticky="ew", padx=(16, 10), pady=(10, 2))
 
         self.selected_value = ctk.CTkLabel(
             self.selected_card,
@@ -700,7 +700,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
             text_color=TEXT_SECONDARY,
             anchor="w",
         )
-        self.selected_value.grid(row=1, column=0, sticky="ew", padx=(16, 10), pady=(0, 12))
+        self.selected_value.grid(row=1, column=0, sticky="ew", padx=(16, 10), pady=(0, 10))
 
         self.selected_hint = ctk.CTkLabel(
             self.selected_card,
@@ -709,56 +709,56 @@ class SaveManagerApp(get_dnd_ctk_base()):
             text_color=TEXT_SECONDARY,
             anchor="w",
         )
-        self.selected_hint.grid(row=1, column=1, sticky="ew", padx=6, pady=(0, 12))
+        self.selected_hint.grid(row=1, column=1, sticky="ew", padx=6, pady=(0, 10))
 
         self.play_button = ctk.CTkButton(
             self.selected_card,
             text="Jogar",
             command=self._play_current_game_placeholder,
-            height=34,
+            height=32,
             fg_color=ACCENT_COLOR,
             hover_color=ACCENT_HOVER,
         )
-        self.play_button.grid(row=0, column=2, rowspan=2, sticky="ew", padx=5, pady=12)
+        self.play_button.grid(row=0, column=2, rowspan=2, sticky="ew", padx=5, pady=10)
 
         self.quick_save_button = ctk.CTkButton(
             self.selected_card,
             text="Saves",
-            command=self._show_game_saves,
-            height=34,
+            command=self._toggle_game_saves_view,
+            height=32,
             fg_color=SURFACE_PRIMARY,
             hover_color=SURFACE_TERTIARY,
             text_color=TEXT_PRIMARY,
             border_width=1,
             border_color=BORDER_COLOR,
         )
-        self.quick_save_button.grid(row=0, column=3, rowspan=2, sticky="ew", padx=5, pady=12)
+        self.quick_save_button.grid(row=0, column=3, rowspan=2, sticky="ew", padx=5, pady=10)
 
         self.load_profile_button = ctk.CTkButton(
             self.selected_card,
             text="Abrir pastas",
             command=self._open_current_game_paths,
-            height=34,
+            height=32,
             fg_color=SURFACE_PRIMARY,
             hover_color=SURFACE_TERTIARY,
             text_color=TEXT_PRIMARY,
             border_width=1,
             border_color=BORDER_COLOR,
         )
-        self.load_profile_button.grid(row=0, column=4, rowspan=2, sticky="ew", padx=5, pady=12)
+        self.load_profile_button.grid(row=0, column=4, rowspan=2, sticky="ew", padx=5, pady=10)
 
         self.more_actions_button = ctk.CTkButton(
             self.selected_card,
             text="Gerenciar jogo",
             command=self._open_current_game_in_manager,
-            height=34,
+            height=32,
             fg_color=SURFACE_PRIMARY,
             hover_color=SURFACE_TERTIARY,
             text_color=TEXT_PRIMARY,
             border_width=1,
             border_color=BORDER_COLOR,
         )
-        self.more_actions_button.grid(row=0, column=5, rowspan=2, sticky="ew", padx=(5, 14), pady=12)
+        self.more_actions_button.grid(row=0, column=5, rowspan=2, sticky="ew", padx=(5, 14), pady=10)
 
         self.game_banner_label = ctk.CTkLabel(self.left_panel, text="")
         self.game_panel_meta = ctk.CTkLabel(self.left_panel, text="")
@@ -777,54 +777,49 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self.game_overview.grid(row=1, column=0, sticky="nsew", padx=18, pady=(0, 18))
         self.game_overview.grid_columnconfigure(0, weight=1)
         self.game_overview.grid_columnconfigure(1, weight=1)
+        self.game_overview.grid_columnconfigure(2, weight=1)
 
-        self.game_context_title = ctk.CTkLabel(
+        self.game_context_active_profile = self._build_game_context_tile(
             self.game_overview,
-            text="Contexto do jogo",
-            font=("Segoe UI Bold", 20),
-            text_color=TEXT_PRIMARY,
-            anchor="w",
-        )
-        self.game_context_title.grid(row=0, column=0, columnspan=2, sticky="ew", padx=18, pady=(18, 6))
-
-        self.game_context_summary = ctk.CTkLabel(
-            self.game_overview,
-            text="Abra um jogo pela Coleção ou pela lista rápida para ver ações e ferramentas.",
-            font=("Segoe UI", 12),
-            text_color=TEXT_SECONDARY,
-            justify="left",
-            anchor="w",
-            wraplength=760,
-        )
-        self.game_context_summary.grid(row=1, column=0, columnspan=2, sticky="ew", padx=18, pady=(0, 14))
-
-        self.game_context_status = self._build_game_context_tile(
-            self.game_overview,
-            2,
             0,
-            "Status",
-            "Nenhum jogo aberto.",
+            0,
+            "Perfil ativo",
+            "Nenhum",
         )
         self.game_context_saves = self._build_game_context_tile(
             self.game_overview,
-            2,
+            0,
             1,
             "Saves",
-            "Perfis e backups ficam em uma seção própria.",
-        )
-        self.game_context_tools = self._build_game_context_tile(
-            self.game_overview,
-            3,
-            0,
-            "Ferramentas",
-            "Mods, backups, diretórios e opções de execução entram aqui futuramente.",
+            "0 perfis",
         )
         self.game_context_paths = self._build_game_context_tile(
             self.game_overview,
-            3,
-            1,
+            0,
+            2,
             "Diretórios",
-            "Pastas de save vinculadas ao jogo.",
+            "0 pastas",
+        )
+        self.game_context_launch = self._build_game_context_tile(
+            self.game_overview,
+            1,
+            0,
+            "Inicialização",
+            "Não configurada",
+        )
+        self.game_context_backup = self._build_game_context_tile(
+            self.game_overview,
+            1,
+            1,
+            "Último backup",
+            "Sob demanda",
+        )
+        self.game_context_mods = self._build_game_context_tile(
+            self.game_overview,
+            1,
+            2,
+            "Mods",
+            "Não configurado",
         )
 
     def _build_game_context_tile(self, master, row, column, title, value):
@@ -835,7 +830,13 @@ class SaveManagerApp(get_dnd_ctk_base()):
             border_width=1,
             border_color=BORDER_COLOR,
         )
-        tile.grid(row=row, column=column, sticky="nsew", padx=(18 if column == 0 else 8, 18 if column == 1 else 8), pady=(0, 12))
+        tile.grid(
+            row=row,
+            column=column,
+            sticky="nsew",
+            padx=(14 if column == 0 else 7, 14 if column == 2 else 7),
+            pady=(14 if row == 0 else 0, 10),
+        )
         tile.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(
             tile,
@@ -843,17 +844,17 @@ class SaveManagerApp(get_dnd_ctk_base()):
             font=("Segoe UI Semibold", 12),
             text_color=TEXT_PRIMARY,
             anchor="w",
-        ).grid(row=0, column=0, sticky="ew", padx=12, pady=(12, 2))
+        ).grid(row=0, column=0, sticky="ew", padx=12, pady=(10, 1))
         value_label = ctk.CTkLabel(
             tile,
             text=value,
-            font=("Segoe UI", 11),
+            font=("Segoe UI", 12),
             text_color=TEXT_SECONDARY,
             anchor="w",
             justify="left",
-            wraplength=360,
+            wraplength=260,
         )
-        value_label.grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 12))
+        value_label.grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 10))
         return value_label
 
     def _build_game_controls(self):
@@ -1838,18 +1839,28 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self.game_tool_mode = "saves"
         self._show_page("game")
 
+    def _toggle_game_saves_view(self):
+        if self.game_tool_mode == "saves":
+            self._show_game_overview()
+        else:
+            self._show_game_saves()
+
     def _sync_game_page_mode(self):
         if not hasattr(self, "game_overview"):
             return
 
         showing_saves = self.game_tool_mode == "saves"
         if showing_saves:
+            self.left_panel.grid_rowconfigure(1, weight=0)
+            self.left_panel.grid_rowconfigure(4, weight=1)
             self.game_overview.grid_remove()
             self.profile_header.grid()
             self.profile_search.grid()
             self.profile_list.grid()
             self._refresh_profiles()
         else:
+            self.left_panel.grid_rowconfigure(1, weight=1)
+            self.left_panel.grid_rowconfigure(4, weight=0)
             self.profile_header.grid_remove()
             self.profile_search.grid_remove()
             self.profile_list.grid_remove()
@@ -1926,15 +1937,13 @@ class SaveManagerApp(get_dnd_ctk_base()):
             self.game_panel_title.configure(text="Nenhum jogo")
             self.game_banner_label.configure(text="CAPA")
             self.game_panel_meta.configure(text="Escolha um jogo na Coleção para abrir o contexto.")
-            if hasattr(self, "game_context_title"):
-                self.game_context_title.configure(text="Contexto do jogo")
-                self.game_context_summary.configure(
-                    text="Abra um jogo pela Coleção ou pela lista rápida para ver ações e ferramentas."
-                )
-                self.game_context_status.configure(text="Nenhum jogo aberto.")
-                self.game_context_saves.configure(text="Perfis e backups ficam em uma seção própria.")
-                self.game_context_tools.configure(text="Mods, backups, diretórios e opções de execução entram aqui futuramente.")
-                self.game_context_paths.configure(text="Pastas de save vinculadas ao jogo.")
+            if hasattr(self, "game_context_active_profile"):
+                self.game_context_active_profile.configure(text="Nenhum")
+                self.game_context_saves.configure(text="0 perfis")
+                self.game_context_paths.configure(text="0 pastas")
+                self.game_context_launch.configure(text="Não configurada")
+                self.game_context_backup.configure(text="Sem perfil ativo")
+                self.game_context_mods.configure(text="Não configurado")
             if hasattr(self, "home_current_game"):
                 self.home_current_game.configure(text="Escolha um jogo na biblioteca para preparar seus saves.")
             if hasattr(self, "home_play_button"):
@@ -1954,17 +1963,14 @@ class SaveManagerApp(get_dnd_ctk_base()):
         profile_total = len(listar_perfis(self.current_game))
         active_profile = obter_perfil_ativo(self.current_game)
         self.game_panel_meta.configure(text=f"{profile_total} perfil(is) · {len(paths)} diretório(s)")
-        if hasattr(self, "game_context_title"):
-            self.game_context_title.configure(text=f"Hub de {self.current_game}")
-            self.game_context_summary.configure(
-                text="Página contextual do jogo. Use as seções para acessar saves, diretórios, mods e configurações futuras."
-            )
-            self.game_context_status.configure(
-                text=f"Perfil ativo: {active_profile}" if active_profile else "Nenhum perfil ativo no momento."
-            )
-            self.game_context_saves.configure(text=f"{profile_total} perfil(is) de save cadastrado(s).")
-            self.game_context_tools.configure(text="Saves já disponíveis. Mods, backups e launch options preparados para expansão.")
-            self.game_context_paths.configure(text=f"{len(paths)} pasta(s) de save vinculada(s).")
+        if hasattr(self, "game_context_active_profile"):
+            launch_name = Path(launch_config.get("executable_path") or "").name
+            self.game_context_active_profile.configure(text=active_profile or "Nenhum")
+            self.game_context_saves.configure(text=f"{profile_total} perfil(is)")
+            self.game_context_paths.configure(text=f"{len(paths)} pasta(s)")
+            self.game_context_launch.configure(text=launch_name if can_launch else "Não configurada")
+            self.game_context_backup.configure(text=active_profile or "Sem perfil ativo")
+            self.game_context_mods.configure(text="Não configurado")
         if hasattr(self, "home_current_game"):
             self.home_current_game.configure(text=f"{self.current_game} pronto para gerenciar saves.")
         if hasattr(self, "home_play_button"):
@@ -1976,7 +1982,10 @@ class SaveManagerApp(get_dnd_ctk_base()):
             text="Jogar" if can_launch else "Configurar inicialização",
             state="normal",
         )
-        self.quick_save_button.configure(state="normal")
+        self.quick_save_button.configure(
+            text="Visão geral" if self.game_tool_mode == "saves" else "Saves",
+            state="normal",
+        )
         self.load_profile_button.configure(state="normal")
         self.more_actions_button.configure(state="normal")
 
@@ -1996,21 +2005,14 @@ class SaveManagerApp(get_dnd_ctk_base()):
             return
 
         try:
-            if launch_config.get("launch_as_admin"):
-                self._set_status(f"Solicitando UAC para iniciar '{self.current_game}'...", "info")
-            else:
-                self._set_status(f"Iniciando '{self.current_game}'...", "info")
-            launch_result = launch_game(launch_config)
+            self._set_status(f"Iniciando '{self.current_game}'...", "info")
+            launch_game(launch_config)
         except LaunchCancelled as error:
             self._set_status(str(error), "info")
         except (LaunchError, ValueError, OSError) as error:
             self._set_status(str(error), "error")
         else:
-            method = launch_result.get("method") if isinstance(launch_result, dict) else ""
-            if method == "elevated/runas":
-                self._set_status("Comando de elevação enviado ao Windows com sucesso.", "success")
-            else:
-                self._set_status(f"'{self.current_game}' iniciado.", "success")
+            self._set_status(f"'{self.current_game}' iniciado.", "success")
 
     def _refresh_profiles(self):
         for widget in self.profile_list.winfo_children():
