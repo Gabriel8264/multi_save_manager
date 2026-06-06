@@ -1,5 +1,6 @@
 ﻿import threading
 import os
+import tkinter as tk
 import tkinter.filedialog as filedialog
 import tkinter.messagebox as messagebox
 from pathlib import Path
@@ -25,8 +26,16 @@ from app_ui.theme import (
     WARNING_COLOR,
     apply_theme,
 )
+from app_ui.window_utils import center_window, center_window_near_parent_top
 from app_ui.widgets import BusyOverlay, GameLibraryCard, GameLibraryListItem, ProfileCard
 from core.config_manager import obter_diretorios_jogo
+from core.collections_manager import (
+    CollectionError,
+    create_user_collection,
+    get_user_collection,
+    get_user_collections_file,
+    list_user_collections,
+)
 from core.game_manager import (
     alternar_favorito_jogo,
     excluir_jogo_com_dados,
@@ -38,6 +47,15 @@ from core.game_manager import (
     salvar_jogo,
 )
 from core.launch_manager import LaunchCancelled, LaunchError, has_valid_launch_config, launch_game
+from core.local_auth import (
+    AuthError,
+    authenticate_local_user,
+    clear_session,
+    create_local_user,
+    create_session,
+    get_active_session,
+    has_local_users,
+)
 from core.runtime_checks import (
     coletar_alertas_pre_troca,
     contar_arquivos_em_diretorios,
@@ -58,6 +76,7 @@ from core.settings_manager import (
     obter_tema,
     registrar_recente,
 )
+from core.user_manager import get_current_user
 from core.validators import validate_profile_name
 
 
@@ -71,6 +90,19 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self.minsize(1000, 680)
         self.configure(fg_color=APP_BACKGROUND)
 
+        self.auth_frame = None
+        self._main_initialized = False
+        self._resize_bound = False
+        self.dnd_context = None
+
+        if get_active_session():
+            self._start_authenticated_app()
+        else:
+            self._show_auth_screen(create_mode=not has_local_users())
+
+        self.after(0, self._maximize_on_startup)
+
+    def _setup_main_state(self):
         self.busy = False
         self.selected_profile = None
         self.current_game = ""
@@ -93,11 +125,20 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self.collection_filter = "all"
         self._collection_grid_columns = 0
         self.library_mode = "collection"
+        self.user_collection_cards = {}
+        self.open_collection_id = ""
         self._page_built = {}
 
+    def _start_authenticated_app(self):
+        if self.auth_frame is not None and self.auth_frame.winfo_exists():
+            self.auth_frame.destroy()
+        self.auth_frame = None
+
+        self._setup_main_state()
         self.dnd_context = enable_tkdnd(self)
 
         self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(0, weight=0)
         self.grid_rowconfigure(1, weight=1)
 
         self._build_header()
@@ -106,8 +147,269 @@ class SaveManagerApp(get_dnd_ctk_base()):
 
         self._load_games(initial=True)
         self._refresh_theme_switch()
-        self.bind("<Configure>", self._on_resize)
-        self.after(0, self._maximize_on_startup)
+        if not self._resize_bound:
+            self.bind("<Configure>", self._on_resize)
+            self._resize_bound = True
+        self._main_initialized = True
+
+    def _show_auth_screen(self, create_mode=False):
+        self._destroy_main_ui()
+
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=0)
+
+        self.auth_frame = ctk.CTkFrame(self, fg_color=APP_BACKGROUND, corner_radius=0)
+        self.auth_frame.grid(row=0, column=0, sticky="nsew")
+        self.auth_frame.grid_columnconfigure(0, weight=1)
+        self.auth_frame.grid_rowconfigure(0, weight=1)
+
+        self.auth_content_frame = ctk.CTkFrame(
+            self.auth_frame,
+            fg_color=SURFACE_PRIMARY,
+            corner_radius=18,
+            border_width=1,
+            border_color=BORDER_COLOR,
+        )
+        self.auth_content_frame.grid(row=0, column=0, sticky="", padx=24, pady=24)
+        self.auth_content_frame.grid_columnconfigure(0, weight=1)
+        if create_mode:
+            self._render_create_user_form(first_user_creation=not has_local_users())
+        else:
+            self._render_login_form()
+
+    def _clear_auth_content(self):
+        for widget in self.auth_content_frame.winfo_children():
+            widget.destroy()
+
+    def _build_auth_header(self, title, subtitle):
+        ctk.CTkLabel(
+            self.auth_content_frame,
+            text=title,
+            font=("Segoe UI Bold", 24),
+            text_color=TEXT_PRIMARY,
+            anchor="w",
+        ).grid(row=0, column=0, sticky="ew", padx=24, pady=(24, 4))
+
+        ctk.CTkLabel(
+            self.auth_content_frame,
+            text=subtitle,
+            font=("Segoe UI", 12),
+            text_color=TEXT_SECONDARY,
+            anchor="w",
+        ).grid(row=1, column=0, sticky="ew", padx=24, pady=(0, 18))
+
+    def _build_auth_entry(self, row, placeholder, show=None):
+        entry_options = {}
+        if show:
+            entry_options["show"] = show
+        entry = ctk.CTkEntry(
+            self.auth_content_frame,
+            placeholder_text=placeholder,
+            width=360,
+            height=38,
+            corner_radius=10,
+            fg_color=SURFACE_SECONDARY,
+            border_color=BORDER_COLOR,
+            text_color=TEXT_PRIMARY,
+            **entry_options,
+        )
+        entry.grid(row=row, column=0, sticky="ew", padx=24, pady=(0, 10))
+        return entry
+
+    def _build_auth_password_entry(self, row, placeholder):
+        field_frame = ctk.CTkFrame(self.auth_content_frame, fg_color="transparent")
+        field_frame.grid(row=row, column=0, sticky="ew", padx=24, pady=(0, 10))
+        field_frame.grid_columnconfigure(0, weight=1)
+        field_frame.grid_columnconfigure(1, weight=0)
+
+        entry = ctk.CTkEntry(
+            field_frame,
+            placeholder_text=placeholder,
+            height=38,
+            corner_radius=10,
+            fg_color=SURFACE_SECONDARY,
+            border_color=BORDER_COLOR,
+            text_color=TEXT_PRIMARY,
+            show="*",
+        )
+        entry.grid(row=0, column=0, sticky="ew")
+        entry.password_visible = False
+
+        toggle_button = ctk.CTkButton(
+            field_frame,
+            text="👁",
+            width=38,
+            height=38,
+            corner_radius=10,
+            fg_color=SURFACE_SECONDARY,
+            hover_color=SURFACE_TERTIARY,
+            text_color=TEXT_SECONDARY,
+            border_width=1,
+            border_color=BORDER_COLOR,
+            command=lambda: self._toggle_password_visibility(entry, toggle_button),
+        )
+        toggle_button.grid(row=0, column=1, sticky="e", padx=(8, 0))
+        return entry
+
+    def _toggle_password_visibility(self, entry, button):
+        try:
+            cursor_index = entry.index("insert")
+        except tk.TclError:
+            cursor_index = None
+
+        entry.password_visible = not bool(getattr(entry, "password_visible", False))
+        if entry.password_visible:
+            entry.configure(show="")
+            button.configure(text="👁", text_color=ACCENT_COLOR, border_color=ACCENT_COLOR)
+        else:
+            entry.configure(show="*")
+            button.configure(text="👁", text_color=TEXT_SECONDARY, border_color=BORDER_COLOR)
+
+        entry.focus_set()
+        if cursor_index is not None:
+            try:
+                entry.icursor(cursor_index)
+            except tk.TclError:
+                pass
+
+    def _build_auth_error_label(self, row):
+        self.auth_error_label = ctk.CTkLabel(
+            self.auth_content_frame,
+            text="",
+            font=("Segoe UI", 11),
+            text_color=ERROR_COLOR,
+            anchor="w",
+        )
+        self.auth_error_label.grid(row=row, column=0, sticky="ew", padx=24, pady=(0, 8))
+
+    def _build_auth_action_row(self, row):
+        action_row = ctk.CTkFrame(self.auth_content_frame, fg_color="transparent")
+        action_row.grid(row=row, column=0, sticky="ew", padx=24, pady=(0, 24))
+        action_row.grid_columnconfigure(0, weight=1)
+        action_row.grid_columnconfigure(1, weight=1)
+        return action_row
+
+    def _render_login_form(self):
+        self._clear_auth_content()
+        self.current_auth_mode = "login"
+        self._build_auth_header("Entrar", "Acesse com usuário e senha locais.")
+
+        self.auth_username_entry = self._build_auth_entry(2, "Usuário")
+        self.auth_password_entry = self._build_auth_password_entry(3, "Senha")
+        self.auth_password_entry.bind("<Return>", lambda _event: self._submit_login_form())
+        self._build_auth_error_label(4)
+        action_row = self._build_auth_action_row(5)
+
+        enter_button = ctk.CTkButton(
+            action_row,
+            text="Entrar",
+            command=self._submit_login_form,
+            height=36,
+            fg_color=ACCENT_COLOR,
+            hover_color=ACCENT_HOVER,
+        )
+        enter_button.grid(row=0, column=0, sticky="ew", padx=(0, 6))
+
+        create_button = ctk.CTkButton(
+            action_row,
+            text="Criar usuário",
+            command=lambda: self._render_create_user_form(first_user_creation=False),
+            height=36,
+            fg_color=SURFACE_SECONDARY,
+            hover_color=SURFACE_TERTIARY,
+            text_color=TEXT_PRIMARY,
+            border_width=1,
+            border_color=BORDER_COLOR,
+        )
+        create_button.grid(row=0, column=1, sticky="ew", padx=(6, 0))
+        self.auth_username_entry.focus_set()
+
+    def _render_create_user_form(self, first_user_creation=False):
+        self._clear_auth_content()
+        self.current_auth_mode = "create"
+        title = "Criar primeiro usuário" if first_user_creation else "Criar usuário"
+        self._build_auth_header(title, "Cadastre um usuário local para este launcher.")
+
+        self.create_username_entry = self._build_auth_entry(2, "Usuário")
+        self.create_password_entry = self._build_auth_password_entry(3, "Senha")
+        self.create_confirm_password_entry = self._build_auth_password_entry(4, "Confirmar senha")
+        self.create_confirm_password_entry.bind("<Return>", lambda _event: self._submit_create_user_form())
+        self._build_auth_error_label(5)
+        action_row = self._build_auth_action_row(6)
+
+        create_button = ctk.CTkButton(
+            action_row,
+            text="Criar",
+            command=self._submit_create_user_form,
+            height=36,
+            fg_color=ACCENT_COLOR,
+            hover_color=ACCENT_HOVER,
+        )
+        create_button.grid(row=0, column=0, sticky="ew", padx=(0, 6))
+
+        back_button = ctk.CTkButton(
+            action_row,
+            text="Voltar para login",
+            command=self._render_login_form,
+            height=36,
+            fg_color=SURFACE_SECONDARY,
+            hover_color=SURFACE_TERTIARY,
+            text_color=TEXT_PRIMARY,
+            border_width=1,
+            border_color=BORDER_COLOR,
+        )
+        back_button.grid(row=0, column=1, sticky="ew", padx=(6, 0))
+
+        self.create_username_entry.focus_set()
+
+    def _submit_login_form(self):
+        username = self.auth_username_entry.get() if hasattr(self, "auth_username_entry") else ""
+        password = self.auth_password_entry.get() if hasattr(self, "auth_password_entry") else ""
+        try:
+            user = authenticate_local_user(username, password)
+            create_session(user)
+        except AuthError as exc:
+            self.auth_error_label.configure(text=str(exc))
+            return
+
+        self._start_authenticated_app()
+
+    def _submit_create_user_form(self):
+        username = self.create_username_entry.get() if hasattr(self, "create_username_entry") else ""
+        password = self.create_password_entry.get() if hasattr(self, "create_password_entry") else ""
+        confirm_password = (
+            self.create_confirm_password_entry.get()
+            if hasattr(self, "create_confirm_password_entry")
+            else ""
+        )
+        if password != confirm_password:
+            self.auth_error_label.configure(text="As senhas não conferem.")
+            return
+
+        try:
+            user = create_local_user(username, password)
+            create_session(user)
+        except AuthError as exc:
+            self.auth_error_label.configure(text=str(exc))
+            return
+
+        self._start_authenticated_app()
+
+    def _destroy_main_ui(self):
+        if getattr(self, "_game_manager_open_after", None) is not None:
+            self.after_cancel(self._game_manager_open_after)
+            self._game_manager_open_after = None
+        if getattr(self, "game_manager", None) is not None and self.game_manager.winfo_exists():
+            self.game_manager.destroy()
+            self.game_manager = None
+        for attr in ("busy_overlay", "header", "content"):
+            widget = getattr(self, attr, None)
+            if widget is not None and widget.winfo_exists():
+                widget.destroy()
+            if hasattr(self, attr):
+                setattr(self, attr, None)
+        self._main_initialized = False
 
     def _build_header(self):
         self.header = ctk.CTkFrame(
@@ -119,9 +421,10 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self.header.grid_columnconfigure(0, weight=1)
         self.header.grid_columnconfigure(1, weight=0)
         self.header.grid_columnconfigure(2, weight=0)
+        self.header.grid_rowconfigure(0, minsize=48)
 
         title_block = ctk.CTkFrame(self.header, fg_color="transparent")
-        title_block.grid(row=0, column=0, sticky="w", padx=(0, 14), pady=2)
+        title_block.grid(row=0, column=0, sticky="w", padx=(0, 14), pady=(4, 4))
 
         self.title_label = ctk.CTkLabel(
             title_block,
@@ -134,13 +437,13 @@ class SaveManagerApp(get_dnd_ctk_base()):
 
         self.subtitle_label = ctk.CTkLabel(
             title_block,
-            text="Launcher de saves e biblioteca",
+            text="Launcher de saves e coleções",
             font=("Segoe UI", 10),
             text_color=TEXT_SECONDARY,
             anchor="w",
         )
         self.subtitle_label.grid(row=1, column=0, sticky="w")
-        self.subtitle_label.configure(text="Launcher de saves e biblioteca")
+        self.subtitle_label.configure(text="Launcher de saves e coleções")
 
         self.settings_button = ctk.CTkButton(
             self.header,
@@ -182,7 +485,8 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self.nav_rail.grid(row=0, column=0, sticky="ns", padx=(0, 10))
         self.nav_rail.grid_propagate(False)
         self.nav_rail.grid_columnconfigure(0, weight=1)
-        self.nav_rail.grid_rowconfigure(5, weight=1)
+        self.nav_rail.grid_rowconfigure(6, weight=1)
+        self._build_user_nav()
         self._build_navigation()
 
         self.left_panel = ctk.CTkFrame(
@@ -217,11 +521,76 @@ class SaveManagerApp(get_dnd_ctk_base()):
 
         self._build_pages()
 
+    def _build_user_nav(self):
+        user = get_current_user()
+        self.user_menu_visible = False
+        self.active_user_button = ctk.CTkButton(
+            self.nav_rail,
+            text=f"{user.display_name}\nConta local",
+            height=46,
+            command=self._show_user_menu,
+            fg_color=SURFACE_SECONDARY,
+            hover_color=SURFACE_TERTIARY,
+            text_color=TEXT_PRIMARY,
+            border_width=1,
+            border_color=BORDER_COLOR,
+            font=("Segoe UI Semibold", 11),
+        )
+        self.active_user_button.grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 8))
+
+        self.user_menu_frame = ctk.CTkFrame(
+            self.nav_rail,
+            fg_color=SURFACE_PRIMARY,
+            corner_radius=12,
+            border_width=1,
+            border_color=BORDER_COLOR,
+        )
+        self.user_menu_frame.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(
+            self.user_menu_frame,
+            text="Conta",
+            font=("Segoe UI Semibold", 11),
+            text_color=TEXT_SECONDARY,
+            anchor="w",
+        ).grid(row=0, column=0, sticky="ew", padx=10, pady=(9, 4))
+
+        self.logout_button = ctk.CTkButton(
+            self.user_menu_frame,
+            text="Sair da conta",
+            command=self._logout_to_login,
+            height=32,
+            fg_color=SURFACE_SECONDARY,
+            hover_color=SURFACE_TERTIARY,
+            text_color=TEXT_PRIMARY,
+            border_width=1,
+            border_color=BORDER_COLOR,
+            font=("Segoe UI", 11),
+        )
+        self.logout_button.grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 8))
+
+    def _show_user_menu(self):
+        if self.user_menu_visible:
+            self._hide_user_menu()
+            return
+
+        self.user_menu_frame.grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 8))
+        self.user_menu_visible = True
+
+    def _hide_user_menu(self):
+        if getattr(self, "user_menu_visible", False):
+            self.user_menu_frame.grid_forget()
+            self.user_menu_visible = False
+
+    def _logout_to_login(self):
+        self._hide_user_menu()
+        clear_session()
+        self._show_auth_screen(create_mode=False)
+
     def _build_navigation(self):
         nav_items = [
             ("home", "Home"),
-            ("library", "Biblioteca"),
-            ("saves", "Saves"),
+            ("library", "Coleções"),
             ("mods", "Mods"),
             ("settings", "Config"),
         ]
@@ -239,7 +608,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
                 border_color=ACCENT_COLOR if active else SURFACE_SECONDARY,
                 command=lambda page=page_name: self._navigate(page),
             )
-            button.grid(row=index, column=0, sticky="ew", padx=8, pady=(10 if index == 0 else 4, 0))
+            button.grid(row=index + 2, column=0, sticky="ew", padx=8, pady=(4, 0))
             self.nav_buttons[page_name] = button
 
     def _build_pages(self):
@@ -257,20 +626,12 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self._show_page("home")
 
     def _navigate(self, page_name):
-        if page_name == "saves":
-            if not self.current_game:
-                self._set_status("Abra um jogo antes de acessar os saves.", "info")
-                page_name = "library"
-            else:
-                self.game_tool_mode = "saves"
-                page_name = "game"
-
         if page_name in {"mods", "settings"}:
             self._set_status(f"Página '{page_name}' preparada para uma etapa futura.", "info")
             return
 
         if page_name == "game" and not self.current_game:
-            self._set_status("Selecione um jogo na biblioteca primeiro.", "info")
+            self._set_status("Selecione um jogo nas Coleções primeiro.", "info")
             page_name = "library"
 
         self._show_page(page_name)
@@ -280,11 +641,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
     def _show_page(self, page_name):
         self.current_page = page_name
         for name, button in getattr(self, "nav_buttons", {}).items():
-            active = name == page_name or (
-                page_name == "game"
-                and self.game_tool_mode == "saves"
-                and name == "saves"
-            )
+            active = name == page_name
             button.configure(
                 fg_color=ACCENT_COLOR if active else SURFACE_SECONDARY,
                 text_color=TEXT_PRIMARY if active else TEXT_SECONDARY,
@@ -334,7 +691,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
 
         self.home_current_game = ctk.CTkLabel(
             hero,
-            text="Escolha um jogo na biblioteca para preparar seus saves.",
+            text="Escolha um jogo nas Coleções para preparar seus saves.",
             font=("Segoe UI", 12),
             text_color=TEXT_SECONDARY,
             anchor="w",
@@ -414,7 +771,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self.game_card.grid_rowconfigure(0, weight=1)
 
         self.library_list_panel = ctk.CTkFrame(self.nav_rail, fg_color="transparent")
-        self.library_list_panel.grid(row=5, column=0, sticky="nsew", padx=6, pady=(10, 6))
+        self.library_list_panel.grid(row=6, column=0, sticky="nsew", padx=6, pady=(10, 6))
         self.library_list_panel.grid_columnconfigure(0, weight=1)
         self.library_list_panel.grid_rowconfigure(2, weight=1)
 
@@ -422,10 +779,9 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self.library_top.grid(row=0, column=0, sticky="ew", pady=(0, 6))
         self.library_top.grid_columnconfigure(0, weight=1)
         self.library_top.grid_columnconfigure(1, weight=0)
-        self.library_top.grid_columnconfigure(2, weight=0)
 
         title_block = ctk.CTkFrame(self.library_top, fg_color="transparent")
-        title_block.grid(row=0, column=0, sticky="ew", padx=(0, 14))
+        title_block.grid(row=0, column=0, sticky="ew", padx=(0, 8))
         title_block.grid_columnconfigure(0, weight=1)
 
         self.library_title = ctk.CTkLabel(
@@ -446,8 +802,24 @@ class SaveManagerApp(get_dnd_ctk_base()):
         )
         self.library_meta.grid(row=1, column=0, sticky="ew", pady=(2, 0))
 
+        self.sidebar_add_game_button = ctk.CTkButton(
+            self.library_top,
+            text="+",
+            width=28,
+            height=26,
+            corner_radius=8,
+            command=self._open_game_manager,
+            fg_color=SURFACE_SECONDARY,
+            hover_color=SURFACE_TERTIARY,
+            text_color=ACCENT_COLOR,
+            border_width=1,
+            border_color=BORDER_COLOR,
+            font=("Segoe UI Semibold", 15),
+        )
+        self.sidebar_add_game_button.grid(row=0, column=1, sticky="ne", pady=(1, 0))
+
         self.library_filter_frame = ctk.CTkFrame(self.library_top, fg_color="transparent")
-        self.library_filter_frame.grid(row=0, column=1, sticky="e", padx=(0, 8))
+        self.library_filter_frame.grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 0))
         self.library_filter_frame.grid_columnconfigure(0, weight=0)
         self.library_filter_frame.grid_columnconfigure(1, weight=0)
 
@@ -543,17 +915,17 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self.library_game_page.grid_columnconfigure(0, weight=1)
         self.library_game_page.grid_rowconfigure(1, weight=1)
 
-        collection_top = ctk.CTkFrame(self.library_game_page, fg_color="transparent")
-        collection_top.grid(row=0, column=0, sticky="ew", pady=(0, 10))
-        collection_top.grid_columnconfigure(0, weight=1)
+        self.collections_top = ctk.CTkFrame(self.library_game_page, fg_color="transparent")
+        self.collections_top.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+        self.collections_top.grid_columnconfigure(0, weight=1)
 
-        title_stack = ctk.CTkFrame(collection_top, fg_color="transparent")
+        title_stack = ctk.CTkFrame(self.collections_top, fg_color="transparent")
         title_stack.grid(row=0, column=0, sticky="ew", padx=(2, 12))
         title_stack.grid_columnconfigure(0, weight=1)
 
         self.library_game_context_label = ctk.CTkLabel(
             title_stack,
-            text="Biblioteca",
+            text="Coleções",
             font=("Segoe UI Bold", 22),
             text_color=TEXT_PRIMARY,
             anchor="w",
@@ -562,56 +934,27 @@ class SaveManagerApp(get_dnd_ctk_base()):
 
         self.collection_meta_label = ctk.CTkLabel(
             title_stack,
-            text="Coleção completa",
+            text="Organize seus jogos em grupos pessoais",
             font=("Segoe UI", 11),
             text_color=TEXT_SECONDARY,
             anchor="w",
         )
         self.collection_meta_label.grid(row=1, column=0, sticky="ew", pady=(1, 0))
 
-        self.collection_search = ctk.CTkEntry(
-            collection_top,
-            placeholder_text="Buscar na coleção...",
-            width=230,
-            height=32,
-            corner_radius=10,
-            fg_color=SURFACE_SECONDARY,
-            border_color=BORDER_COLOR,
-            text_color=TEXT_PRIMARY,
-        )
-        self.collection_search.grid(row=0, column=1, rowspan=2, sticky="e", padx=(0, 8))
-        self.collection_search.bind("<KeyRelease>", lambda _event: self._refresh_collection_grid())
-
-        self.collection_filter_frame = ctk.CTkFrame(collection_top, fg_color="transparent")
-        self.collection_filter_frame.grid(row=0, column=2, rowspan=2, sticky="e", padx=(0, 8))
-
-        self.collection_all_filter_button = ctk.CTkButton(
-            self.collection_filter_frame,
-            text="Todos",
-            width=62,
+        self.add_collection_button = ctk.CTkButton(
+            self.collections_top,
+            text="+",
+            width=34,
             height=30,
-            command=lambda: self._set_collection_filter("all"),
-            fg_color=ACCENT_COLOR,
-            hover_color=ACCENT_HOVER,
-            text_color=TEXT_PRIMARY,
-            border_width=1,
-            border_color=BORDER_COLOR,
-        )
-        self.collection_all_filter_button.grid(row=0, column=0, sticky="e")
-
-        self.collection_favorites_filter_button = ctk.CTkButton(
-            self.collection_filter_frame,
-            text="Favoritos",
-            width=84,
-            height=30,
-            command=lambda: self._set_collection_filter("favorites"),
+            command=self._show_create_collection_modal,
             fg_color=SURFACE_SECONDARY,
             hover_color=SURFACE_TERTIARY,
-            text_color=TEXT_SECONDARY,
+            text_color=ACCENT_COLOR,
             border_width=1,
             border_color=BORDER_COLOR,
+            font=("Segoe UI Semibold", 16),
         )
-        self.collection_favorites_filter_button.grid(row=0, column=1, sticky="e", padx=(5, 0))
+        self.add_collection_button.grid(row=0, column=1, rowspan=2, sticky="e")
 
         self.collection_grid_frame = ctk.CTkScrollableFrame(
             self.library_game_page,
@@ -620,7 +963,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
             border_width=0,
         )
         self.collection_grid_frame.grid(row=1, column=0, sticky="nsew")
-        self.collection_grid_frame.bind("<Configure>", self._on_collection_grid_resize)
+        self.collection_grid_frame.grid_columnconfigure(0, weight=1)
         self._refresh_collection_grid()
 
     def _build_library_stat_card(self, master, row, column, title, value):
@@ -800,12 +1143,10 @@ class SaveManagerApp(get_dnd_ctk_base()):
             "Diretórios",
             "0 pastas",
         )
-        self.game_context_launch = self._build_game_context_tile(
+        self.game_context_launch = self._build_launch_context_tile(
             self.game_overview,
             1,
             0,
-            "Inicialização",
-            "Não configurada",
         )
         self.game_context_backup = self._build_game_context_tile(
             self.game_overview,
@@ -856,6 +1197,102 @@ class SaveManagerApp(get_dnd_ctk_base()):
         )
         value_label.grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 10))
         return value_label
+
+    def _build_launch_context_tile(self, master, row, column):
+        tile = ctk.CTkFrame(
+            master,
+            fg_color=SURFACE_PRIMARY,
+            corner_radius=12,
+            border_width=1,
+            border_color=BORDER_COLOR,
+        )
+        tile.grid(
+            row=row,
+            column=column,
+            sticky="nsew",
+            padx=(14 if column == 0 else 7, 14 if column == 2 else 7),
+            pady=(14 if row == 0 else 0, 10),
+        )
+        tile.grid_columnconfigure(0, weight=1)
+        tile.grid_columnconfigure(1, weight=0)
+
+        ctk.CTkLabel(
+            tile,
+            text="Inicialização",
+            font=("Segoe UI Semibold", 12),
+            text_color=TEXT_PRIMARY,
+            anchor="w",
+        ).grid(row=0, column=0, sticky="ew", padx=(12, 4), pady=(10, 1))
+
+        admin_icon = tk.Canvas(
+            tile,
+            width=16,
+            height=16,
+            highlightthickness=0,
+            bd=0,
+            bg=self._theme_value(SURFACE_PRIMARY),
+        )
+        admin_icon.grid(row=0, column=1, sticky="e", padx=(4, 12), pady=(10, 1))
+        self._draw_uac_shield_icon(admin_icon)
+        admin_icon.grid_remove()
+
+        executable_label = ctk.CTkLabel(
+            tile,
+            text="Não configurada",
+            font=("Segoe UI Semibold", 12),
+            text_color=TEXT_PRIMARY,
+            anchor="w",
+            justify="left",
+            wraplength=240,
+        )
+        executable_label.grid(row=1, column=0, columnspan=2, sticky="ew", padx=12, pady=(0, 1))
+
+        arguments_label = ctk.CTkLabel(
+            tile,
+            text="Inicialização padrão",
+            font=("Segoe UI", 11),
+            text_color=TEXT_SECONDARY,
+            anchor="w",
+            justify="left",
+            wraplength=240,
+        )
+        arguments_label.grid(row=2, column=0, columnspan=2, sticky="ew", padx=12, pady=(0, 10))
+
+        return {
+            "file": executable_label,
+            "args": arguments_label,
+            "admin": admin_icon,
+        }
+
+    def _theme_value(self, color):
+        if isinstance(color, tuple):
+            return color[1] if ctk.get_appearance_mode().lower() == "dark" else color[0]
+        return color
+
+    def _draw_uac_shield_icon(self, canvas):
+        canvas.delete("all")
+        canvas.configure(bg=self._theme_value(SURFACE_PRIMARY))
+        canvas.create_polygon(8, 1, 2, 3, 2, 7, 8, 7, fill="#5f8edb", outline="")
+        canvas.create_polygon(8, 1, 14, 3, 14, 7, 8, 7, fill="#263143", outline="")
+        canvas.create_polygon(2, 7, 8, 7, 8, 15, 5, 13, 3, 10, fill="#263143", outline="")
+        canvas.create_polygon(8, 7, 14, 7, 13, 10, 11, 13, 8, 15, fill="#8fb4f5", outline="")
+        canvas.create_line(8, 1, 8, 15, fill="#344057", width=1)
+        canvas.create_line(2, 7, 14, 7, fill="#344057", width=1)
+        canvas.create_polygon(
+            8, 1,
+            14, 3,
+            14, 7,
+            13, 10,
+            11, 13,
+            8, 15,
+            5, 13,
+            3, 10,
+            2, 7,
+            2, 3,
+            fill="",
+            outline="#4b5870",
+            width=1,
+        )
 
     def _build_game_controls(self):
         self.game_card = ctk.CTkFrame(
@@ -921,7 +1358,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
 
         self.library_title = ctk.CTkLabel(
             self.game_card,
-            text="Biblioteca",
+            text="Coleções",
             font=("Segoe UI Semibold", 15),
             text_color=TEXT_PRIMARY,
             anchor="w",
@@ -1087,7 +1524,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
 
         self.game_panel_meta = ctk.CTkLabel(
             self.selected_card,
-            text="Biblioteca pronta para capas, banners e atalhos.",
+            text="Coleções prontas para organizar seus jogos.",
             font=("Segoe UI", 12),
             text_color=TEXT_SECONDARY,
             justify="left",
@@ -1271,7 +1708,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
 
         self.tip_labels = []
         tip_lines = [
-            "Escolha um jogo na biblioteca para ver seus perfis.",
+            "Escolha um jogo nas Coleções para ver seus perfis.",
             "Favoritos ficam em destaque para acesso rápido.",
             "O app protege a troca de saves quando detecta risco.",
             "Capas, banners e atalho de jogo já têm espaço reservado.",
@@ -1379,10 +1816,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
             border_color=BORDER_COLOR,
         ).grid(row=2, column=0, sticky="ew", padx=20, pady=(0, 18))
 
-        modal.update_idletasks()
-        x = self.winfo_x() + max(0, (self.winfo_width() - modal.winfo_width()) // 2)
-        y = self.winfo_y() + max(0, (self.winfo_height() - modal.winfo_height()) // 2)
-        modal.geometry(f"+{x}+{y}")
+        center_window_near_parent_top(modal, self, top_margin=76)
         modal.grab_set()
 
     def _load_selected_profile(self):
@@ -1492,7 +1926,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
                 text=(
                     "Nenhum favorito ainda"
                     if self.library_filter == "favorites"
-                    else ("Biblioteca vazia" if not query else "Nenhum jogo encontrado")
+                    else ("Nenhum jogo cadastrado" if not query else "Nenhum jogo encontrado")
                 ),
                 font=("Segoe UI Bold", 22),
                 text_color=TEXT_PRIMARY,
@@ -1535,26 +1969,6 @@ class SaveManagerApp(get_dnd_ctk_base()):
             card.grid(row=index, column=0, sticky="ew", padx=3, pady=(4 if index == 0 else 2, 2))
             self.library_cards[game.name] = card
 
-    def _get_collection_query(self):
-        return self.collection_search.get().strip() if hasattr(self, "collection_search") else ""
-
-    def _get_collection_grid_columns(self, width=None):
-        if width is None and hasattr(self, "collection_grid_frame"):
-            width = self.collection_grid_frame.winfo_width()
-        width = width or 900
-        return max(4, min(8, int(max(width - 16, 560) // 154)))
-
-    def _on_collection_grid_resize(self, event=None):
-        if not hasattr(self, "collection_grid_frame"):
-            return
-
-        columns = self._get_collection_grid_columns(event.width if event else None)
-        if columns == self._collection_grid_columns:
-            return
-
-        self._collection_grid_columns = columns
-        self._refresh_collection_grid()
-
     def _refresh_library_collection(self):
         self._refresh_game_selector()
         self._refresh_collection_grid()
@@ -1565,96 +1979,254 @@ class SaveManagerApp(get_dnd_ctk_base()):
 
         for widget in self.collection_grid_frame.winfo_children():
             widget.destroy()
-        self.collection_cards = {}
+        self.user_collection_cards = {}
 
-        query = self._get_collection_query()
-        all_games = listar_jogos_biblioteca(query)
-        games = [
-            game for game in all_games
-            if self.collection_filter == "all" or game.favorite
-        ]
-        total_games = len(listar_jogos_biblioteca(""))
-        favorite_total = len([game for game in listar_jogos_biblioteca("") if game.favorite])
+        if self.open_collection_id:
+            self._render_open_user_collection()
+            return
+
+        collections = list_user_collections()
+        self.library_game_context_label.configure(text="Coleções")
         self.collection_meta_label.configure(
-            text=(
-                f"{len(games)} favorito(s)"
-                if self.collection_filter == "favorites"
-                else (f"{len(games)} de {total_games} jogo(s)" if query else f"{total_games} jogo(s)")
-            )
+            text=f"{len(collections)} coleção(ões)" if collections else "Crie coleções para organizar seus jogos"
         )
-        self._update_collection_filter_buttons(favorite_total)
 
-        if not games:
-            empty = ctk.CTkFrame(self.collection_grid_frame, fg_color="transparent")
-            empty.grid(row=0, column=0, sticky="nsew", padx=20, pady=20)
+        if not collections:
+            empty = ctk.CTkFrame(
+                self.collection_grid_frame,
+                fg_color=SURFACE_PRIMARY,
+                corner_radius=14,
+                border_width=1,
+                border_color=BORDER_COLOR,
+            )
+            empty.grid(row=0, column=0, sticky="ew", padx=8, pady=8)
+            empty.grid_columnconfigure(0, weight=1)
             ctk.CTkLabel(
                 empty,
-                text="Nenhum jogo encontrado" if query else "Biblioteca vazia",
+                text="Nenhuma coleção ainda",
                 font=("Segoe UI Bold", 18),
                 text_color=TEXT_PRIMARY,
                 anchor="w",
-            ).grid(row=0, column=0, sticky="w")
+            ).grid(row=0, column=0, sticky="ew", padx=16, pady=(16, 4))
             ctk.CTkLabel(
                 empty,
-                text="Cadastre jogos em Gerenciar jogos para montar sua coleção.",
+                text="Use o botão + para criar sua primeira coleção.",
                 font=("Segoe UI", 12),
                 text_color=TEXT_SECONDARY,
                 anchor="w",
-            ).grid(row=1, column=0, sticky="w", pady=(4, 10))
-            ctk.CTkButton(
-                empty,
-                text="Gerenciar jogos",
-                command=self._open_game_manager,
-                width=130,
-                height=32,
-                fg_color=ACCENT_COLOR,
-                hover_color=ACCENT_HOVER,
-            ).grid(row=2, column=0, sticky="w")
+            ).grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 16))
             return
 
-        columns = self._get_collection_grid_columns()
-        self._collection_grid_columns = columns
-        for column in range(columns):
-            self.collection_grid_frame.grid_columnconfigure(column, weight=0)
+        for index, collection in enumerate(collections):
+            card = self._build_user_collection_card(collection)
+            card.grid(row=index, column=0, sticky="ew", padx=8, pady=(8 if index == 0 else 4, 4))
+            self.user_collection_cards[collection.id] = card
 
-        for index, game in enumerate(games):
-            row = index // columns
-            column = index % columns
+    def _build_user_collection_card(self, collection):
+        card = ctk.CTkFrame(
+            self.collection_grid_frame,
+            fg_color=SURFACE_PRIMARY,
+            corner_radius=14,
+            border_width=1,
+            border_color=BORDER_COLOR,
+        )
+        card.grid_columnconfigure(0, weight=1)
+        card.grid_columnconfigure(1, weight=0)
+
+        ctk.CTkLabel(
+            card,
+            text=collection.name,
+            font=("Segoe UI Semibold", 15),
+            text_color=TEXT_PRIMARY,
+            anchor="w",
+        ).grid(row=0, column=0, sticky="ew", padx=14, pady=(12, 2))
+
+        ctk.CTkLabel(
+            card,
+            text=f"{collection.game_count} jogo(s)",
+            font=("Segoe UI", 11),
+            text_color=TEXT_SECONDARY,
+            anchor="w",
+        ).grid(row=1, column=0, sticky="ew", padx=14, pady=(0, 12))
+
+        ctk.CTkButton(
+            card,
+            text="Abrir",
+            width=82,
+            height=30,
+            command=lambda collection_id=collection.id: self._open_user_collection(collection_id),
+            fg_color=SURFACE_SECONDARY,
+            hover_color=SURFACE_TERTIARY,
+            text_color=TEXT_PRIMARY,
+            border_width=1,
+            border_color=BORDER_COLOR,
+        ).grid(row=0, column=1, rowspan=2, sticky="e", padx=14, pady=12)
+        return card
+
+    def _render_open_user_collection(self):
+        collection = get_user_collection(self.open_collection_id)
+        if not collection:
+            self.open_collection_id = ""
+            self._refresh_collection_grid()
+            return
+
+        self.library_game_context_label.configure(text=collection.name)
+        self.collection_meta_label.configure(text=f"{collection.game_count} jogo(s) nesta coleção")
+
+        top_row = ctk.CTkFrame(self.collection_grid_frame, fg_color="transparent")
+        top_row.grid(row=0, column=0, sticky="ew", padx=8, pady=(4, 10))
+        ctk.CTkButton(
+            top_row,
+            text="Voltar para Coleções",
+            width=150,
+            height=30,
+            command=self._close_user_collection,
+            fg_color=SURFACE_SECONDARY,
+            hover_color=SURFACE_TERTIARY,
+            text_color=TEXT_PRIMARY,
+            border_width=1,
+            border_color=BORDER_COLOR,
+        ).grid(row=0, column=0, sticky="w")
+
+        if not collection.game_ids:
+            ctk.CTkLabel(
+                self.collection_grid_frame,
+                text="Esta coleção ainda está vazia.",
+                font=("Segoe UI", 13),
+                text_color=TEXT_SECONDARY,
+                anchor="w",
+            ).grid(row=1, column=0, sticky="ew", padx=12, pady=18)
+            return
+
+        games_by_name = {game.name: game for game in listar_jogos_biblioteca("")}
+        row = 1
+        for game_id in collection.game_ids:
+            game = games_by_name.get(game_id)
+            if not game:
+                continue
             card = GameLibraryCard(
                 self.collection_grid_frame,
                 game=game,
-                selected=game.name == self.collection_selected_game,
-                on_select=self._select_game_from_collection,
+                selected=False,
+                on_select=self._open_game_from_collection,
                 on_open=self._open_game_from_collection,
                 on_favorite=self._toggle_favorite_from_card,
                 profile_count=len(listar_perfis(game.name)),
             )
-            card.grid(row=row, column=column, sticky="nw", padx=6, pady=8)
-            self.collection_cards[game.name] = card
+            card.grid(row=row, column=0, sticky="w", padx=8, pady=6)
+            row += 1
 
-    def _set_collection_filter(self, filter_name):
-        if filter_name not in {"all", "favorites"} or filter_name == self.collection_filter:
-            return
-
-        self.collection_filter = filter_name
-        self._update_collection_filter_buttons()
+    def _open_user_collection(self, collection_id):
+        self.open_collection_id = collection_id
         self._refresh_collection_grid()
 
-    def _update_collection_filter_buttons(self, favorite_total=None):
-        if not hasattr(self, "collection_all_filter_button"):
+    def _close_user_collection(self):
+        self.open_collection_id = ""
+        self._refresh_collection_grid()
+
+    def _show_create_collection_modal(self):
+        if hasattr(self, "create_collection_modal") and self.create_collection_modal.winfo_exists():
+            self.create_collection_modal.lift()
+            self.create_collection_name_entry.focus_set()
             return
 
-        self.collection_all_filter_button.configure(
-            fg_color=ACCENT_COLOR if self.collection_filter == "all" else SURFACE_SECONDARY,
-            hover_color=ACCENT_HOVER if self.collection_filter == "all" else SURFACE_TERTIARY,
-            text_color=TEXT_PRIMARY if self.collection_filter == "all" else TEXT_SECONDARY,
+        modal_width = 360
+        modal_height = 240
+        self.create_collection_modal = ctk.CTkToplevel(self)
+        self.create_collection_modal.title("Criar coleção")
+        self.create_collection_modal.geometry(f"{modal_width}x{modal_height}")
+        self.create_collection_modal.resizable(False, False)
+        self.create_collection_modal.transient(self)
+
+        frame = ctk.CTkFrame(
+            self.create_collection_modal,
+            fg_color=SURFACE_PRIMARY,
+            corner_radius=14,
+            border_width=1,
+            border_color=BORDER_COLOR,
         )
-        self.collection_favorites_filter_button.configure(
-            text="Favoritos" if favorite_total is None else f"Favoritos {favorite_total}",
-            fg_color=ACCENT_COLOR if self.collection_filter == "favorites" else SURFACE_SECONDARY,
-            hover_color=ACCENT_HOVER if self.collection_filter == "favorites" else SURFACE_TERTIARY,
-            text_color=TEXT_PRIMARY if self.collection_filter == "favorites" else TEXT_SECONDARY,
+        frame.pack(fill="both", expand=True, padx=14, pady=14)
+        frame.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(
+            frame,
+            text="Criar coleção",
+            font=("Segoe UI Bold", 18),
+            text_color=TEXT_PRIMARY,
+            anchor="w",
+        ).grid(row=0, column=0, sticky="ew", padx=14, pady=(14, 8))
+
+        self.create_collection_name_entry = ctk.CTkEntry(
+            frame,
+            placeholder_text="Nome da coleção",
+            height=36,
+            fg_color=SURFACE_SECONDARY,
+            border_color=BORDER_COLOR,
+            text_color=TEXT_PRIMARY,
         )
+        self.create_collection_name_entry.grid(row=1, column=0, sticky="ew", padx=14, pady=(0, 8))
+        self.create_collection_name_entry.bind("<Return>", lambda _event: self._create_collection_from_modal())
+
+        self.create_collection_error_label = ctk.CTkLabel(
+            frame,
+            text="",
+            font=("Segoe UI", 11),
+            text_color=ERROR_COLOR,
+            anchor="w",
+        )
+        self.create_collection_error_label.grid(row=2, column=0, sticky="ew", padx=14, pady=(0, 6))
+
+        actions = ctk.CTkFrame(frame, fg_color="transparent")
+        actions.grid(row=3, column=0, sticky="ew", padx=14, pady=(0, 14))
+        actions.grid_columnconfigure(0, weight=1)
+        actions.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkButton(
+            actions,
+            text="Criar",
+            command=self._create_collection_from_modal,
+            height=34,
+            fg_color=ACCENT_COLOR,
+            hover_color=ACCENT_HOVER,
+        ).grid(row=0, column=0, sticky="ew", padx=(0, 6))
+        ctk.CTkButton(
+            actions,
+            text="Cancelar",
+            command=self.create_collection_modal.destroy,
+            height=34,
+            fg_color=SURFACE_SECONDARY,
+            hover_color=SURFACE_TERTIARY,
+            text_color=TEXT_PRIMARY,
+            border_width=1,
+            border_color=BORDER_COLOR,
+        ).grid(row=0, column=1, sticky="ew", padx=(6, 0))
+        center_window(self.create_collection_modal, self)
+        self.create_collection_modal.lift()
+        self.create_collection_modal.after(80, self._focus_create_collection_name)
+
+    def _focus_create_collection_name(self):
+        if not (
+            hasattr(self, "create_collection_modal")
+            and self.create_collection_modal.winfo_exists()
+            and hasattr(self, "create_collection_name_entry")
+        ):
+            return
+        self.create_collection_modal.lift()
+        self.create_collection_name_entry.focus_set()
+        self.create_collection_name_entry.select_range(0, "end")
+        self.create_collection_name_entry.icursor("end")
+
+    def _create_collection_from_modal(self):
+        name = self.create_collection_name_entry.get() if hasattr(self, "create_collection_name_entry") else ""
+        try:
+            collection = create_user_collection(name)
+        except CollectionError as exc:
+            self.create_collection_error_label.configure(text=str(exc))
+            return
+
+        self.open_collection_id = collection.id
+        self.create_collection_modal.destroy()
+        self._refresh_collection_grid()
 
     def _select_game_from_collection(self, selected_game):
         if self.busy:
@@ -1796,7 +2368,8 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self.library_mode = "collection"
         self.library_title.configure(text="Jogos")
         if hasattr(self, "library_game_context_label"):
-            self.library_game_context_label.configure(text="Biblioteca")
+            self.open_collection_id = ""
+            self.library_game_context_label.configure(text="Coleções")
         query = self._get_library_query()
         self._refresh_game_library_cards(query)
         self._refresh_collection_grid()
@@ -1941,11 +2514,11 @@ class SaveManagerApp(get_dnd_ctk_base()):
                 self.game_context_active_profile.configure(text="Nenhum")
                 self.game_context_saves.configure(text="0 perfis")
                 self.game_context_paths.configure(text="0 pastas")
-                self.game_context_launch.configure(text="Não configurada")
+                self._update_launch_context_tile(None, False)
                 self.game_context_backup.configure(text="Sem perfil ativo")
                 self.game_context_mods.configure(text="Não configurado")
             if hasattr(self, "home_current_game"):
-                self.home_current_game.configure(text="Escolha um jogo na biblioteca para preparar seus saves.")
+                self.home_current_game.configure(text="Escolha um jogo nas Coleções para preparar seus saves.")
             if hasattr(self, "home_play_button"):
                 self.home_play_button.configure(text="Jogar", state="disabled")
             self.play_button.configure(state="disabled")
@@ -1968,7 +2541,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
             self.game_context_active_profile.configure(text=active_profile or "Nenhum")
             self.game_context_saves.configure(text=f"{profile_total} perfil(is)")
             self.game_context_paths.configure(text=f"{len(paths)} pasta(s)")
-            self.game_context_launch.configure(text=launch_name if can_launch else "Não configurada")
+            self._update_launch_context_tile(launch_config, can_launch)
             self.game_context_backup.configure(text=active_profile or "Sem perfil ativo")
             self.game_context_mods.configure(text="Não configurado")
         if hasattr(self, "home_current_game"):
@@ -1983,11 +2556,44 @@ class SaveManagerApp(get_dnd_ctk_base()):
             state="normal",
         )
         self.quick_save_button.configure(
-            text="Visão geral" if self.game_tool_mode == "saves" else "Saves",
+            text="Saves",
             state="normal",
+            fg_color=ACCENT_COLOR if self.game_tool_mode == "saves" else SURFACE_PRIMARY,
+            hover_color=ACCENT_HOVER if self.game_tool_mode == "saves" else SURFACE_TERTIARY,
+            border_color=ACCENT_COLOR if self.game_tool_mode == "saves" else BORDER_COLOR,
         )
         self.load_profile_button.configure(state="normal")
         self.more_actions_button.configure(state="normal")
+
+    def _update_launch_context_tile(self, launch_config, can_launch):
+        if not hasattr(self, "game_context_launch"):
+            return
+
+        launch_config = launch_config or {}
+        executable_path = str(launch_config.get("executable_path") or "")
+        arguments = str(launch_config.get("launch_arguments") or "")
+        launch_as_admin = bool(launch_config.get("launch_as_admin", False))
+
+        file_label = self.game_context_launch["file"]
+        args_label = self.game_context_launch["args"]
+        admin_label = self.game_context_launch["admin"]
+
+        if not can_launch:
+            file_label.configure(text="Não configurada", text_color=TEXT_SECONDARY)
+            args_label.configure(text="Inicialização padrão", text_color=TEXT_SECONDARY)
+            admin_label.grid_remove()
+            return
+
+        file_label.configure(text=Path(executable_path).name, text_color=TEXT_PRIMARY)
+        args_label.configure(
+            text=arguments if arguments else "Sem argumentos",
+            text_color=TEXT_SECONDARY,
+        )
+        if launch_as_admin:
+            self._draw_uac_shield_icon(admin_label)
+            admin_label.grid()
+        else:
+            admin_label.grid_remove()
 
     def _play_current_game_placeholder(self):
         if not self.current_game:
@@ -2165,9 +2771,6 @@ class SaveManagerApp(get_dnd_ctk_base()):
 
         if self.library_filter == "favorites" and not favorite:
             self._refresh_game_library_cards(self._get_library_query())
-        if self.collection_filter == "favorites" and not favorite:
-            self._refresh_collection_grid()
-
         self._set_status(
             f"Jogo '{game_name}' {'favoritado' if favorite else 'removido dos favoritos'}.",
             "success",
@@ -2182,13 +2785,8 @@ class SaveManagerApp(get_dnd_ctk_base()):
         if home_card and home_card.winfo_exists():
             home_card.set_favorite(favorite)
 
-        collection_card = self.collection_cards.get(game_name)
-        if collection_card and collection_card.winfo_exists():
-            collection_card.set_favorite(favorite)
-
         favorite_total = len([game for game in listar_jogos_biblioteca("") if game.favorite])
         self._update_library_filter_buttons(favorite_total)
-        self._update_collection_filter_buttons(favorite_total)
 
     def _open_game_manager(self):
         if self.busy:
@@ -2543,7 +3141,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
             messagebox.showerror(title, message, parent=self)
 
     def _on_resize(self, _event=None):
-        if not self.winfo_exists():
+        if not self.winfo_exists() or not getattr(self, "_main_initialized", False):
             return
         width = self.winfo_width()
         self._apply_main_layout(width < 1120)

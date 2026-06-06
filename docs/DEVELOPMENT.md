@@ -86,6 +86,30 @@ Para testar sem mexer em saves reais:
 
 Evite usar a propria raiz do projeto como pasta de save. O validador bloqueia os caminhos internos principais, mas testes com pasta temporaria reduzem risco.
 
+## Teste seguro de autenticação local
+
+A autenticação local usa arquivos na pasta do projeto:
+
+- `data/users.json`
+- `data/session.json`
+- `data/auth_migration_backups/`
+
+Para testar criação/login sem tocar nos dados reais do projeto, rode um teste isolado em uma pasta temporária e importe o pacote do repo:
+
+```powershell
+$tmp = Join-Path $PWD ".codex_tmp\auth_test"
+New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+```
+
+Depois execute um script que faça `os.chdir($tmp)` antes de importar `core.local_auth`. Isso força `config.json`, `settings.json`, `game_library.json`, `data/users.json` e `data/session.json` a serem criados dentro da pasta temporária.
+
+Cuidados:
+
+- Não apague `data/users.json` ou `data/session.json` reais sem pedido explícito.
+- Não desative `auth_enabled` manualmente para testar migração sem antes fazer backup.
+- Se for testar preservação de dados antigos, simule `config.json`, `settings.json` e `game_library.json` temporários.
+- A primeira ativação de autenticação deve criar backup em `data/auth_migration_backups/` e preservar jogos, favoritos, recentes, inicialização e biblioteca visual.
+
 ## Build
 
 ```powershell

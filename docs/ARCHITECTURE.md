@@ -27,19 +27,33 @@ Responsavel por `config.json`.
 
 Tambem migra configuracoes antigas normalizando caminhos e removendo entradas invalidas.
 
+### `local_auth.py`
+
+Autenticação local simples e manual, sem conta online.
+
+- `create_local_user(username, password)`: cria usuário em `data/users.json`.
+- `authenticate_local_user(username, password)`: valida usuário/senha.
+- `create_session(user)`: grava sessão ativa em `data/session.json`.
+- `get_active_session()`: valida sessão persistente e sincroniza `current_user_id`.
+- `clear_session()`: remove a sessão ativa para exigir login manual.
+
+Senhas usam PBKDF2-SHA256 com salt. O primeiro usuário criado usa `default_user` para preservar compatibilidade com `Profiles/` legado e jogos existentes.
+
+Antes da primeira ativação de autenticação, o módulo cria backup leve dos metadados em `data/auth_migration_backups/<timestamp>/`, incluindo `config.json`, `settings.json`, `profile_state.json` e `game_library.json` quando existirem. Ele não move nem apaga jogos, perfis, saves ou biblioteca visual.
+
 ### `user_manager.py`
 
-Camada minima para preparar modos futuros, multiusuario e permissoes sem login.
+Camada minima para expor usuário atual, modo e permissões para o restante do app.
 
 - `obter_usuario_local()`: retorna o usuario padrao local.
 - `obter_modo_app()`: retorna `single_user` ou `multi_user`.
-- `autenticacao_ativada()`: retorna `False` por padrao.
+- `autenticacao_ativada()`: reflete `auth_enabled` do `config.json`.
 - `get_current_user_id()`: retorna `default_user` por padrao.
 - `get_current_user()`: retorna o usuario atual.
 - `is_manager_mode()`: indica se o contexto atual e manager/admin.
 - `get_current_permissions()`: retorna flags para `edit_games`, `edit_save_paths`, `delete_profiles`, `access_advanced_settings` e `manage_users`.
 
-Nao ha senha, tela de login ou recuperacao de senha.
+Senha e sessão ficam em `core.local_auth`; `user_manager.py` não valida credenciais e não conhece senha.
 
 ### `storage_manager.py`
 
@@ -80,11 +94,22 @@ Camada de aplicacao para biblioteca de jogos. Ela nao muda o formato do `config.
 
 - `GameLibraryItem`: representacao interna de um jogo com nome, pastas de save e favorito.
 - Metadados visuais opcionais: `cover_path` e `banner_path`, lidos de `game_library.json` quando existir.
+- Configuração de inicialização opcional: `executable_path`, `launch_arguments` e `launch_as_admin`, também em `game_library.json`.
 - `listar_jogos_biblioteca(query)`: lista jogos filtrados e ordenados com favoritos no topo.
 - `listar_nomes_jogos(query)`: atalho para a UI que precisa apenas dos nomes.
 - `salvar_jogo(nome_atual, novo_nome, diretorios)`: adiciona ou atualiza jogo e propaga renomeacoes para perfis/favoritos.
 - `excluir_jogo_com_dados(jogo)`: remove perfis, favoritos e config do jogo.
 - `alternar_favorito_jogo(jogo)` e `jogo_eh_favorito(jogo)`: fachada para favoritos.
+
+### `launch_manager.py`
+
+Camada de inicialização de jogos.
+
+- Aceita `.exe` e `.bat`.
+- Preserva argumentos como digitados.
+- Usa a pasta do arquivo como working directory.
+- Quando `launch_as_admin` é `true`, usa ShellExecuteW com verbo `runas` para pedir elevação/UAC apenas ao processo iniciado.
+- Mantém logs mínimos: jogo iniciado, falha ao iniciar e UAC cancelado.
 
 ### `save_manager.py`
 
@@ -137,11 +162,14 @@ Contem `SaveManagerApp`, a janela principal.
 
 Responsabilidades:
 
+- controlar tela de login/criação de usuário antes de montar a UI principal;
 - selecionar jogo atual;
 - listar, buscar, criar, renomear, excluir e carregar perfis;
 - chamar operacoes do `core` em thread;
 - mostrar progresso, overlay e status;
 - abrir `GameManagerWindow`.
+
+A tela de login não lista usuários cadastrados. Se `data/session.json` tiver sessão ativa válida, o app monta a UI principal diretamente. O botão do usuário ativo na navegação permite `Trocar usuário` ou `Sair`, ambos limpando a sessão.
 
 ### `game_manager_window.py`
 

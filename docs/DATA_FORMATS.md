@@ -53,16 +53,68 @@ Regras:
 
 - `app_mode` usa o padrao atual `single_user` ou `multi_user`.
 - Valores antigos `individual` e `lan_house` sao aceitos apenas como aliases de migracao para configuracoes legadas.
-- `auth_enabled` fica `false` por padrao. Nao ha login implementado ainda.
+- `auth_enabled` fica `false` por padrao em configs antigas e passa para `true` quando a autenticação local é ativada.
 - `manager_mode_enabled` prepara um modo administrativo futuro. Atualmente nao bloqueia nem libera telas.
 - `current_user_id` aponta para o usuario ativo local. O padrao e `default_user`.
-- `users` prepara multiusuario sem senha.
+- `users` guarda apenas dados públicos do usuário ativo/registrado para compatibilidade com permissões. Senhas não ficam em `config.json`.
 - `permission_profiles` prepara permissoes futuras. Atualmente essas permissoes nao bloqueiam funcionalidades.
 - `local_user` fica preservado por compatibilidade com a etapa anterior. Nao guarda senha.
 - Cada chave em `jogos` e um nome de jogo.
 - Cada valor e uma lista de diretorios.
 - Caminhos sao normalizados por `core.path_resolver.normalizar_caminho_salvo`.
 - Duplicatas sao removidas durante validacao/migracao.
+
+Compatibilidade: ativar o multiusuário local não deve apagar nem reconstruir a chave `jogos`. Jogos, caminhos de save e demais campos já existentes em `config.json` devem continuar acessíveis depois da criação do primeiro usuário.
+
+## `data/users.json`
+
+Arquivo local de credenciais. Ele é separado de `config.json` para não misturar senha/hash com a configuração histórica de jogos.
+
+```json
+{
+  "schema_version": 1,
+  "users": {
+    "default_user": {
+      "id": "default_user",
+      "username": "Gabriel",
+      "display_name": "Gabriel",
+      "role": "manager",
+      "permission_profile": "manager",
+      "password": {
+        "algorithm": "pbkdf2_sha256",
+        "iterations": 220000,
+        "salt": "hexadecimal",
+        "hash": "hexadecimal"
+      }
+    }
+  }
+}
+```
+
+Regras:
+
+- A senha nunca deve ser salva em texto puro.
+- O primeiro usuário criado usa `default_user` para preservar compatibilidade com `Profiles/` legado.
+- Usuários seguintes recebem ids derivados do nome de usuário, com sufixo quando necessário.
+- A tela de login não lista usuários cadastrados; o login é sempre manual por usuário e senha.
+
+## `data/session.json`
+
+Sessão local persistente.
+
+```json
+{
+  "active": true,
+  "user_id": "default_user",
+  "username": "Gabriel"
+}
+```
+
+Regras:
+
+- Se `active` for `true` e o usuário existir em `data/users.json`, o app abre direto no usuário salvo.
+- Ao usar `Sair` ou `Trocar usuário`, o arquivo é regravado como sessão inativa.
+- Depois de logout, o usuário precisa digitar usuário e senha novamente.
 
 ## `settings.json`
 
@@ -103,7 +155,10 @@ Arquivo opcional para metadados visuais da futura biblioteca gamer. Ele nao subs
   "games": {
     "Nome do Jogo": {
       "cover_path": "C:\\Imagens\\Nome do Jogo\\cover.jpg",
-      "banner_path": "C:\\Imagens\\Nome do Jogo\\banner.jpg"
+      "banner_path": "C:\\Imagens\\Nome do Jogo\\banner.jpg",
+      "executable_path": "C:\\Jogos\\Nome do Jogo\\Jogo.exe",
+      "launch_arguments": "-vr \"perfil alto\"",
+      "launch_as_admin": false
     }
   }
 }
@@ -113,8 +168,13 @@ Regras atuais:
 
 - As chaves em `games` devem bater com os nomes ja cadastrados em `config.json`.
 - `cover_path` e `banner_path` sao opcionais.
+- `executable_path` é opcional e aceita `.exe` ou `.bat`.
+- `launch_arguments` é opcional e preserva espaços/aspas como digitado.
+- `launch_as_admin` força elevação via UAC apenas para o processo iniciado quando `true`.
 - Quando nao ha imagem valida, a interface mostra um placeholder leve com iniciais do jogo.
-- Ainda nao ha tela para editar esses metadados; o suporte existe apenas para preparar a biblioteca visual.
+- A janela `Gerenciar jogos` edita caminhos de save e configuração de inicialização. Capas/banners continuam metadados opcionais preparados para a biblioteca visual.
+
+Compatibilidade: `game_library.json` continua opcional. Jogos antigos sem campos de inicialização usam fallback seguro e não quebram a biblioteca.
 
 ## Pasta `Profiles/`
 
@@ -174,6 +234,27 @@ Compatibilidade atual:
 - A estrutura em `data/default_user/` prepara o modo `single_user`.
 
 ## Backups de migracao
+
+### Ativação da autenticação local
+
+Antes de ativar `auth_enabled` pela primeira vez, `core.local_auth` cria um backup leve de metadados em:
+
+```text
+data/
+  auth_migration_backups/
+    <YYYYMMDD_HHMMSS>/
+      config.json
+      settings.json
+      profile_state.json
+      game_library.json
+      manifest.json
+```
+
+Esse backup preserva os arquivos que descrevem jogos, favoritos, recentes, biblioteca visual, inicialização e estado de perfis. Ele não copia pastas reais de save nem move `Profiles/`, porque a ativação do login local não altera esses dados.
+
+O `manifest.json` registra que dados futuros como mods, configurações de mods, coleções e perfis de inicialização estão reservados para migrações posteriores.
+
+### Troca entre `single_user` e `multi_user`
 
 Antes de qualquer migracao entre modos, `core.mode_migration.backup_before_migration()` cria:
 

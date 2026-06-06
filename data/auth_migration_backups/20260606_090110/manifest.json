@@ -1,0 +1,20 @@
+{
+  "reason": "Backup antes de ativar autenticação local/multiusuário.",
+  "copied_files": [
+    "config.json",
+    "settings.json",
+    "game_library.json",
+    "profile_state.json"
+  ],
+  "not_moved": [
+    "Profiles/",
+    "data/users/",
+    "pastas reais de save cadastradas"
+  ],
+  "future_reserved_data": [
+    "mods",
+    "mod_settings",
+    "collections",
+    "launch_profiles"
+  ]
+}

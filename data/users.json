@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "users": {
+    "default_user": {
+      "id": "default_user",
+      "username": "Gabriel",
+      "display_name": "Gabriel",
+      "role": "manager",
+      "permission_profile": "manager",
+      "password": {
+        "algorithm": "pbkdf2_sha256",
+        "iterations": 220000,
+        "salt": "fe4b7c446827687aa2eed067b271f581",
+        "hash": "7f661d17295d89abc7547a87ef98065be764e22a8a9c7ec3d21f9a833fd92c4e"
+      }
+    }
+  }
+}

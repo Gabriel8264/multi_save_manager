@@ -15,6 +15,7 @@ from app_ui.theme import (
     TEXT_PRIMARY,
     TEXT_SECONDARY,
 )
+from app_ui.window_utils import center_window
 from app_ui.widgets import PathListEditor, ValidatedEntry
 from core.launch_manager import validate_launch_config
 from core.validators import validate_game_name
@@ -729,18 +730,11 @@ class GameManagerWindow(ctk.CTkToplevel):
                 canvas.yview_moveto(0)
 
     def _fit_to_master(self):
-        master = self.master_window
-        master.update_idletasks()
         screen_width, screen_height = self._get_screen_size()
-        master_width = max(master.winfo_width(), 1000)
-        master_height = max(master.winfo_height(), 680)
         width = min(max(920, int(screen_width * 0.78)), screen_width - 48)
         height = min(max(560, int(screen_height * 0.78)), screen_height - 64)
-        x = master.winfo_rootx() + ((master_width - width) // 2)
-        y = master.winfo_rooty() + ((master_height - height) // 2)
-        x = max(16, min(x, screen_width - width - 16))
-        y = max(16, min(y, screen_height - height - 48))
-        self.geometry(f"{width}x{height}+{x}+{y}")
+        self.geometry(f"{width}x{height}")
+        center_window(self, self.master_window)
 
     def _get_screen_size(self):
         return self.winfo_screenwidth(), self.winfo_screenheight()

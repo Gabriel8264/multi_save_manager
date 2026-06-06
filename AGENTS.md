@@ -9,12 +9,14 @@ Este projeto e um app desktop Python/Tkinter para gerenciar saves de jogos. Leia
 - UI: pacote `app_ui/`, com CustomTkinter.
 - Regras de negocio e arquivos: pacote `core/`.
 - Biblioteca/orquestracao de jogos: `core/game_manager.py`.
-- Modo/usuario local sem login: `core/user_manager.py`, alimentado por `app_mode`, `auth_enabled`, `manager_mode_enabled`, `current_user_id`, `users` e `permission_profiles` em `config.json`.
+- Modo/usuario atual e permissoes: `core/user_manager.py`, alimentado por `app_mode`, `auth_enabled`, `manager_mode_enabled`, `current_user_id`, `users` e `permission_profiles` em `config.json`.
+- Login local manual e sessao persistente: `core/local_auth.py`. Credenciais ficam em `data/users.json` com hash PBKDF2 + salt; sessao ativa fica em `data/session.json`.
 - Caminhos internos por usuario: `core/storage_manager.py`; `default_user` preserva `Profiles/` quando existir.
 - Migração futura entre `single_user` e `multi_user`: `core/mode_migration.py`. As funções sempre fazem backup em `migration_backups/` antes de alterar modo.
 - Janela de cadastro de jogos: `app_ui/game_manager_window.py`; `app_ui/game_manager.py` e apenas um shim de compatibilidade.
-- Dados locais do usuario: `config.json`, `settings.json`, `profile_state.json`, `Profiles/`.
+- Dados locais do usuario: `config.json`, `settings.json`, `profile_state.json`, `Profiles/`, `data/users.json`, `data/session.json`.
 - Metadados visuais opcionais da biblioteca: `game_library.json`.
+- Backup antes da primeira ativacao de auth local: `data/auth_migration_backups/`.
 - Build existente: `ui.spec` para PyInstaller.
 - `git` nao estava disponivel neste terminal em 2026-05-22.
 - A `.venv` foi reparada em 2026-05-22 usando `C:\Users\INFORTECH\AppData\Local\Python\bin\python.exe` como Python base. O alias `python` do Windows/Microsoft Store ainda pode falhar; prefira sempre `.\.venv\Scripts\python.exe` neste projeto.
@@ -68,7 +70,9 @@ Fluxo principal de troca de perfil:
 
 - Nunca apague ou sobrescreva `Profiles/`, `config.json`, `settings.json` ou `profile_state.json` sem pedido explicito.
 - Nunca apague ou sobrescreva `game_library.json` sem pedido explicito; ele pode conter capas/banners locais.
+- Nunca apague `data/users.json` ou `data/session.json` sem pedido explicito; isso afeta login/sessao local.
 - Nao mova `Profiles/` para `data/users/default_user/profiles` automaticamente sem pedido explicito; o fallback atual preserva os perfis existentes.
+- A primeira ativacao de multiusuario local deve preservar jogos, favoritos, recentes, executaveis, argumentos, caminhos de save e biblioteca visual. Se adaptar estrutura de dados, crie backup antes.
 - O app manipula pastas de save reais do usuario. Prefira testar com diretorios temporarios.
 - `core.validators.ensure_safe_save_directory` impede que uma pasta de save aponte para arquivos internos do app.
 - Historicamente alguns textos visiveis tiveram mojibake. Ao editar UI, corrija texto quebrado com cuidado e salve como UTF-8.
@@ -83,6 +87,7 @@ Fluxo principal de troca de perfil:
 - Nova regra de validacao: `core/validators.py`.
 - Mudanca no formato de config de jogos: `core/config_manager.py`.
 - Mudancas futuras de modo `single_user`/`multi_user` ou usuario local: `core/user_manager.py` e defaults de `core/config_manager.py`.
+- Mudancas futuras de login, senha, sessao ou troca de usuario: `core/local_auth.py`.
 - Mudancas futuras de armazenamento multiusuario: `core/storage_manager.py`.
 - Mudancas futuras de troca de modo ou migração de dados: `core/mode_migration.py`.
 - Operacoes de biblioteca de jogos, favoritos e manutencao ao renomear/excluir jogo: `core/game_manager.py`.

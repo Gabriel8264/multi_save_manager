@@ -8,6 +8,7 @@ from app_ui.theme import (
     TEXT_PRIMARY,
     TEXT_SECONDARY,
 )
+from app_ui.window_utils import center_window
 
 
 class PromptDialog(ctk.CTkToplevel):
@@ -175,6 +176,7 @@ class PromptDialog(ctk.CTkToplevel):
         required_width = max(480, self.dialog_card.winfo_reqwidth() + 44)
         required_height = max(300, self.dialog_card.winfo_reqheight() + 44)
         self.geometry(f"{required_width}x{required_height}")
+        center_window(self, self.master_window)
 
     def _prepare_focus(self):
         if self.winfo_exists():
