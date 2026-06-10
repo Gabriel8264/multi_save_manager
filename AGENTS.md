@@ -13,7 +13,7 @@ Este projeto e um app desktop Python/Tkinter para gerenciar saves de jogos. Leia
 - Login local manual e sessao persistente: `core/local_auth.py`. Credenciais ficam em `data/users.json` com hash PBKDF2 + salt; sessao ativa fica em `data/session.json`.
 - Caminhos internos por usuario: `core/storage_manager.py`; `default_user` preserva `Profiles/` quando existir.
 - Migração futura entre `single_user` e `multi_user`: `core/mode_migration.py`. As funções sempre fazem backup em `migration_backups/` antes de alterar modo.
-- Janela de cadastro de jogos: `app_ui/game_manager_window.py`; `app_ui/game_manager.py` e apenas um shim de compatibilidade.
+- Modal interno de cadastro de jogos: `app_ui/game_manager_window.py`; `app_ui/game_manager.py` e apenas um shim de compatibilidade.
 - Dados locais do usuario: `config.json`, `settings.json`, `profile_state.json`, `Profiles/`, `data/users.json`, `data/session.json`.
 - Metadados visuais opcionais da biblioteca: `game_library.json`.
 - Backup antes da primeira ativacao de auth local: `data/auth_migration_backups/`.
@@ -78,7 +78,10 @@ Fluxo principal de troca de perfil:
 - Historicamente alguns textos visiveis tiveram mojibake. Ao editar UI, corrija texto quebrado com cuidado e salve como UTF-8.
 - `tkinterdnd2` e opcional: se falhar, `app_ui.dnd_support.enable_tkdnd` retorna `None` e a UI desativa drag and drop.
 - Drag and drop no Windows depende do processo estar no mesmo nivel de privilegio do Explorer. Se o app rodar como administrador e o Explorer nao, o cursor pode mostrar bloqueio mesmo com `tkinterdnd2` correto.
-- A janela `Gerenciar jogos` e sensivel a foco/DnD. Evite `grab_set`, `WindowStaysOnTopHint`, `-topmost`, overlay/modal global ou `focus_force()` nela. A janela deve abrir como `CTkToplevel` normal, nascer oculta, estabilizar layout/DnD e so entao aparecer.
+- `Gerenciar jogos` e sensivel a DnD/autosave. Ele nao deve abrir como `CTkToplevel`; o fluxo atual e um modal interno (`CTkFrame`) em overlay dentro da janela principal.
+- O overlay de `Gerenciar jogos` fecha ao clicar fora, pelo `X` interno ou por `Esc`. Clique dentro do painel nao deve fechar o modal.
+- `Gerenciar jogos` nao possui botao `Salvar alteracoes`; usa autosave com debounce para texto e salvamento imediato para acoes diretas como executavel, admin e diretorios.
+- Evite `grab_set`, `WindowStaysOnTopHint`, `-topmost`, modalidade pesada ou `focus_force()` nesse fluxo.
 - Ao mexer no DnD, registre o widget visivel e filhos reais que ficam sob o cursor. Os callbacks de `DropEnter` e `DropPosition` precisam retornar acao aceita (`COPY`/copy); apenas executar logica interna nao basta para o Explorer aceitar o drop.
 - `os.startfile` em `PathListEditor` e especifico de Windows.
 
@@ -95,9 +98,19 @@ Fluxo principal de troca de perfil:
 - Troca, backup, exclusao ou exportacao de saves: `core/save_manager.py`.
 - Avisos antes de trocar saves: `core/runtime_checks.py`.
 - Layout principal: `app_ui/app.py`.
-- Janela de cadastro de jogos: `app_ui/game_manager_window.py`.
+- Modal interno de cadastro de jogos: `app_ui/game_manager_window.py`.
+- Camada única de modais internos: `SaveManagerApp._prepare_modal_layer`, `_create_internal_modal_panel` e `_hide_modal_layer` em `app_ui/app.py`.
 - Componentes reutilizaveis: `app_ui/widgets.py`.
 - Paleta/tema: `app_ui/theme.py`.
+
+## Politica atual da UI
+
+- A navegacao principal usa frames persistentes. Evite destruir/recriar `Home`, `Colecoes`, `GameContext`, `Mods` e `Config`; mostre/oculte frames e atualize textos/listas.
+- Todos os modais internos devem reutilizar `modal_layer` em `SaveManagerApp`. Nao crie `CTkToplevel` para fluxos internos como `Gerenciar jogos`, `Criar colecao` e `Mais acoes`.
+- `Gerenciar jogos` e pre-construido na inicializacao da UI principal por `_prebuild_game_manager_modal()` e deve ser apenas revelado/escondido. Nao destrua esse widget ao fechar.
+- Para novos modais internos, use `_prepare_modal_layer(...)`, `_create_internal_modal_panel(...)` e `_hide_modal_layer()` em vez de duplicar overlay, clique fora e Escape.
+- Cards/listas de jogos usam cache persistente. Clique, selecao e favorito devem atualizar apenas o item afetado.
+- Quando dados renderizados mudarem profundamente, como nome, capa/banner, caminhos ou contagem de perfis, use uma assinatura de dados e recrie somente o card afetado, nunca a tela inteira.
 
 ## Checklist antes de finalizar mudancas
 

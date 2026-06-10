@@ -59,6 +59,113 @@ def _load_ctk_image(path_value, size):
         return None
 
 
+class CloseButton(ctk.CTkFrame):
+    def __init__(
+        self,
+        master,
+        command,
+        size=34,
+        icon_size=12,
+        fg_color=SURFACE_SECONDARY,
+        hover_color=SURFACE_TERTIARY,
+        border_color=BORDER_COLOR,
+        icon_color=TEXT_SECONDARY,
+        icon_hover_color=TEXT_PRIMARY,
+    ):
+        super().__init__(
+            master,
+            width=size,
+            height=size,
+            fg_color=fg_color,
+            corner_radius=9,
+            border_width=1,
+            border_color=border_color,
+        )
+        self.command = command
+        self.size = size
+        self.icon_size = icon_size
+        self.normal_color = fg_color
+        self.hover_color = hover_color
+        self.normal_icon_color = icon_color
+        self.hover_icon_color = icon_hover_color
+        self.hovered = False
+
+        self.grid_propagate(False)
+        self.configure(cursor="hand2")
+
+        self.icon_canvas = tk.Canvas(
+            self,
+            width=icon_size + 4,
+            height=icon_size + 4,
+            borderwidth=0,
+            highlightthickness=0,
+            bg=_theme_color(fg_color),
+            cursor="hand2",
+        )
+        self.icon_canvas.place(relx=0.5, rely=0.5, anchor="center")
+
+        for widget in (self, self.icon_canvas):
+            widget.bind("<Button-1>", self._handle_click)
+            widget.bind("<Enter>", self._handle_enter)
+            widget.bind("<Leave>", self._handle_leave)
+        self.icon_canvas.bind("<Configure>", lambda _event: self._draw_icon())
+        self.after_idle(self._draw_icon)
+
+    def _handle_click(self, _event=None):
+        self.command()
+        return "break"
+
+    def _handle_enter(self, _event=None):
+        self.hovered = True
+        self.configure(fg_color=self.hover_color, border_color=TEXT_SECONDARY)
+        self.icon_canvas.configure(bg=_theme_color(self.hover_color))
+        self._draw_icon()
+
+    def _handle_leave(self, _event=None):
+        if self._pointer_is_inside():
+            return
+        self.hovered = False
+        self.configure(fg_color=self.normal_color, border_color=BORDER_COLOR)
+        self.icon_canvas.configure(bg=_theme_color(self.normal_color))
+        self._draw_icon()
+
+    def _pointer_is_inside(self):
+        pointer_x = self.winfo_pointerx()
+        pointer_y = self.winfo_pointery()
+        root_x = self.winfo_rootx()
+        root_y = self.winfo_rooty()
+        return (
+            root_x <= pointer_x <= root_x + self.winfo_width()
+            and root_y <= pointer_y <= root_y + self.winfo_height()
+        )
+
+    def _draw_icon(self):
+        if not self.icon_canvas.winfo_exists():
+            return
+
+        canvas = self.icon_canvas
+        canvas.delete("all")
+        width = max(canvas.winfo_width(), self.icon_size + 4)
+        height = max(canvas.winfo_height(), self.icon_size + 4)
+        half = self.icon_size / 2
+        center_x = width / 2
+        center_y = height / 2
+        color = _theme_color(self.hover_icon_color if self.hovered else self.normal_icon_color)
+        for start_x, start_y, end_x, end_y in (
+            (center_x - half, center_y - half, center_x + half, center_y + half),
+            (center_x + half, center_y - half, center_x - half, center_y + half),
+        ):
+            canvas.create_line(
+                start_x,
+                start_y,
+                end_x,
+                end_y,
+                fill=color,
+                width=1.5,
+                capstyle="round",
+            )
+
+
 class ValidatedEntry(ctk.CTkFrame):
     def __init__(
         self,
@@ -966,6 +1073,16 @@ class ProfileCard(ctk.CTkFrame):
 
     def _handle_click(self, _event=None):
         self.on_activate(self.profile_name)
+
+    def set_active(self, active):
+        self.tag_label.configure(
+            text="Perfil ativo" if active else "Perfil salvo",
+            text_color=SUCCESS_COLOR if active else TEXT_SECONDARY,
+        )
+        self.action_button.configure(
+            fg_color=SUCCESS_COLOR if active else ACCENT_COLOR,
+            text_color=("#052e16", "#041b10") if active else TEXT_PRIMARY,
+        )
 
 
 class BusyOverlay(ctk.CTkFrame):

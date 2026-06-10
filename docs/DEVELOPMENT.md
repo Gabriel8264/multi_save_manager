@@ -10,7 +10,7 @@ C:\Users\INFORTECH\PycharmProjects\multi save manager
 
 Nota de 2026-05-22: a `.venv` foi reparada usando `C:\Users\INFORTECH\AppData\Local\Python\bin\python.exe` como Python base. O comando `python` do PATH ainda pode cair no alias do Windows/Microsoft Store; prefira `.\.venv\Scripts\python.exe`.
 
-Nota de 2026-05-25: `main.py` tenta relancar o app com `.\.venv\Scripts\python.exe` quando detecta que foi iniciado com outro interpretador. Isso foi adicionado porque o PyCharm chegou a abrir o app sem a dependencia `tkinterdnd2`, quebrando o drag and drop da janela `Gerenciar jogos`.
+Nota de 2026-05-25: `main.py` tenta relancar o app com `.\.venv\Scripts\python.exe` quando detecta que foi iniciado com outro interpretador. Isso foi adicionado porque o PyCharm chegou a abrir o app sem a dependencia `tkinterdnd2`, quebrando o drag and drop do fluxo `Gerenciar jogos`.
 
 Use PowerShell na raiz do projeto.
 
@@ -130,7 +130,7 @@ Saidas:
 - Nao atualize widgets diretamente de threads secundarias.
 - Nao introduza dependencias pesadas sem necessidade; o app e desktop simples.
 
-## Drag and drop e janela Gerenciar jogos
+## Drag and drop e modal Gerenciar jogos
 
 O drag and drop de pastas do Explorer depende de `tkinterdnd2` ativo desde a janela raiz. O app usa `app_ui.dnd_support.get_dnd_ctk_base()` para escolher a base correta da `SaveManagerApp` e `enable_tkdnd(...)` para criar o contexto.
 
@@ -138,11 +138,64 @@ Cuidados importantes:
 
 - Se o cursor mostrar icone de bloqueio, primeiro confirme que `.\.venv\Scripts\python.exe` consegue importar `tkinterdnd2`.
 - Nao rode o app como administrador para testar DnD vindo do Explorer normal; niveis diferentes de privilegio podem bloquear drop no Windows.
-- Na janela `Gerenciar jogos`, evite `grab_set`, `-topmost`, overlays globais, modalidade pesada e `focus_force()`. Esses recursos podem interferir no foco ou no DnD.
-- A janela `Gerenciar jogos` deve nascer oculta, estabilizar layout/scroll/DnD e so depois aparecer. Isso evita o usuario ver a janela sendo desenhada.
+- `Gerenciar jogos` nao deve abrir como `CTkToplevel`; ele e um modal interno (`CTkFrame`) dentro de um overlay criado em `SaveManagerApp`.
+- O overlay escuro deve fechar ao clicar fora do painel, e o painel interno deve consumir o clique para nao fechar por engano.
+- Evite `grab_set`, `-topmost`, modalidade pesada e `focus_force()` nesse fluxo. Eles podem interferir no foco ou no DnD.
 - Ao registrar DnD, use o widget visivel sob o cursor e tambem seus filhos reais. CustomTkinter costuma criar widgets internos que podem interceptar o mouse.
 - Callbacks de `DropEnter` e `DropPosition` precisam retornar explicitamente uma acao aceita, como `COPY`; caso contrario o Explorer pode mostrar o cursor proibido mesmo com bindings ativos.
 - O botao `Selecionar pasta` deve continuar existindo como fallback robusto quando DnD nao estiver disponivel.
+
+## Autosave do Gerenciar jogos
+
+O fluxo `Gerenciar jogos` nao possui mais botao `Salvar alteracoes`. O salvamento acontece pelo proprio painel:
+
+- nome do jogo e argumentos: debounce curto, perda de foco ou Enter;
+- arquivo de inicializacao e remocao do arquivo: imediato;
+- alternar `Executar como administrador`: imediato;
+- adicionar diretorio por seletor ou drag and drop: imediato;
+- editar diretorios manualmente: debounce curto, perda de foco ou fechamento do modal.
+
+Ao alterar esse fluxo:
+
+- nao salve a cada tecla sem debounce;
+- nao recrie o painel inteiro apos cada autosave;
+- nao considere uma assinatura como salva se o callback de erro retornar falha;
+- mantenha o layout estavel: caminhos longos devem ser truncados/limitados visualmente, sem expandir o modal.
+
+## Navegacao, modais e refresh visual
+
+A UI principal prioriza navegacao estavel e sem piscadas. Containers estruturais devem ser criados uma vez e mantidos em memoria.
+
+Ao alterar navegacao:
+
+- nao destrua/recrie paginas principais para trocar de tela;
+- use a estrutura persistente de `SaveManagerApp.pages`;
+- troque tela com `tkraise()` e atualize dados pontuais;
+- mantenha `Home`, `Colecoes`, contexto do jogo, `Mods` e `Config` como frames persistentes.
+
+Ao criar ou alterar modal interno:
+
+- use `SaveManagerApp._prepare_modal_layer(...)` para abrir a camada;
+- use `SaveManagerApp._create_internal_modal_panel(...)` para criar o painel visual;
+- use `SaveManagerApp._hide_modal_layer()` para fechar/limpar;
+- nao duplique manualmente overlay, clique fora ou Escape;
+- evite `CTkToplevel` para fluxos internos do launcher.
+
+Modais que usam essa camada atualmente:
+
+- `Gerenciar jogos`;
+- `Criar colecao`;
+- `Mais acoes`.
+
+`Gerenciar jogos` e excecao importante: ele deve ser pre-construido por `_prebuild_game_manager_modal()` quando a UI principal nasce. Ao fechar, autosalve pendencias e esconda o painel com `place_forget()`/`_hide_modal_layer()`, mas nao destrua o widget.
+
+Ao atualizar listas/cards de jogos:
+
+- nao reconstrua a lista inteira por clique, selecao ou favorito;
+- atualize apenas o card anterior e o novo quando for selecao;
+- atualize apenas estrela/estado quando for favorito;
+- use assinatura de dados para detectar mudancas profundas;
+- recrie somente o card afetado quando mudarem nome, capa/banner, caminhos ou contagem de perfis.
 
 ## Dados locais e limpeza
 

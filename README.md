@@ -41,9 +41,10 @@ No PyCharm, use o interpretador `.\.venv\Scripts\python.exe`. Usar outro Python 
 3. Nas próximas execuções, se a sessão ainda estiver ativa, o app entra direto no último usuário.
 4. Clique em `Gerenciar jogos`.
 5. Cadastre o nome do jogo e uma pasta de save por linha.
-6. Crie um perfil para capturar o save atual.
-7. Clique em outro perfil para carregar aquele conjunto de saves.
-8. Use `Salvar agora` para atualizar o backup do perfil ativo com o estado atual do jogo.
+6. As alteracoes do cadastro de jogos sao salvas automaticamente; nao existe mais botao `Salvar alteracoes` nesse fluxo.
+7. Crie um perfil para capturar o save atual.
+8. Clique em outro perfil para carregar aquele conjunto de saves.
+9. Use `Salvar agora` para atualizar o backup do perfil ativo com o estado atual do jogo.
 
 ## Dados locais
 
@@ -79,5 +80,5 @@ O executavel gerado fica em `dist/`. A pasta `build/` contem artefatos intermedi
 
 - `AGENTS.md`: contexto curto para agentes trabalharem sem redescobrir o projeto.
 - `docs/ARCHITECTURE.md`: mapa dos modulos e fluxo de dados.
-- `docs/DEVELOPMENT.md`: comandos, verificacoes, dependencias e cuidados com DnD/foco da janela `Gerenciar jogos`.
+- `docs/DEVELOPMENT.md`: comandos, verificacoes, dependencias e cuidados com DnD/autosave do modal `Gerenciar jogos`.
 - `docs/DATA_FORMATS.md`: formatos dos arquivos JSON e layout dos perfis.

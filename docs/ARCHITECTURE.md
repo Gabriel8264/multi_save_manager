@@ -167,20 +167,63 @@ Responsabilidades:
 - listar, buscar, criar, renomear, excluir e carregar perfis;
 - chamar operacoes do `core` em thread;
 - mostrar progresso, overlay e status;
-- abrir `GameManagerWindow`.
+- abrir o modal interno `GameManagerWindow`.
 
 A tela de login não lista usuários cadastrados. Se `data/session.json` tiver sessão ativa válida, o app monta a UI principal diretamente. O botão do usuário ativo na navegação permite `Trocar usuário` ou `Sair`, ambos limpando a sessão.
 
+#### Navegacao persistente
+
+A UI principal usa frames persistentes para evitar piscadas e reconstrucoes visiveis. `SaveManagerApp` cria a estrutura principal uma vez e navega com `tkraise()`/atualizacao de estado em vez de destruir e recriar telas.
+
+Frames principais mantidos em memoria:
+
+- Home;
+- Colecoes;
+- contexto do jogo;
+- Mods;
+- Config;
+- `modal_layer`.
+
+Ao trocar pagina ou jogo, a regra e atualizar dados pontuais: textos, estado ativo, listas, cards afetados e paineis de contexto. Evite `destroy()` em containers estruturais.
+
+#### Camada unica de modais
+
+`SaveManagerApp` possui uma camada interna unica para modais:
+
+- `_prepare_modal_layer(close_callback)`;
+- `_create_internal_modal_panel(...)`;
+- `_hide_modal_layer()`;
+- `_handle_modal_background_click(...)`;
+- `_handle_modal_escape(...)`.
+
+Fluxos como `Gerenciar jogos`, `Criar colecao` e `Mais acoes` usam essa camada. Novos modais internos devem reutiliza-la para manter comportamento consistente de overlay, clique fora e tecla Esc.
+
+O `Gerenciar jogos` ainda usa um fundo esmaecido especial baseado em captura da janela e desenho do painel arredondado, mas a abertura/fechamento passam pela mesma camada modal. A estrutura do `GameManagerWindow` e pre-construida na inicializacao da UI principal por `_prebuild_game_manager_modal()`; o clique em `Gerenciar jogos` apenas atualiza dados, monta o overlay e revela o painel ja existente.
+
+#### Atualizacao granular de cards
+
+Cards de jogos sao cacheados por contexto visual para reduzir rebuild:
+
+- `library_cards`: lista rapida da sidebar;
+- `home_shelf_cards`: prateleiras de favoritos/recentes;
+- `open_collection_game_cards`: jogos dentro de uma colecao aberta.
+
+Cada card possui uma assinatura dos dados renderizados. Quando nome, favorito, capa/banner, caminhos de save ou contagem de perfis mudam, somente o card afetado e recriado. Mudancas simples, como selecao e favorito, atualizam o widget existente.
+
 ### `game_manager_window.py`
 
-Janela para cadastrar, editar e excluir jogos. Usa callbacks recebidos da janela principal para salvar/excluir.
+Modal interno para cadastrar, editar e excluir jogos. Ele e renderizado dentro de um overlay da janela principal, como um painel sem borda, e usa callbacks recebidos de `SaveManagerApp` para salvar/excluir.
 
 `app_ui/game_manager.py` foi mantido como shim de compatibilidade para importar `GameManagerWindow`.
 
-Cuidados da janela:
+Cuidados do modal:
 
-- Ela deve se comportar como janela secundaria normal do app, sem overlay escuro, sem `grab_set`, sem `-topmost` global e sem `focus_force()` recorrente.
-- Para evitar flicker/desenho visivel ao abrir, a janela nasce oculta, estabiliza layout/scroll/DnD e so depois aparece.
+- Nao use `CTkToplevel` nesse fluxo; o gerenciador atual e um `CTkFrame` dentro de overlay.
+- O overlay escuro bloqueia a interface de fundo e fecha ao clicar fora do painel.
+- O botao `X` do painel e a tecla `Esc` fecham o modal.
+- Clique dentro do painel nao deve fechar o modal.
+- O botao `Salvar alteracoes` foi removido; o cadastro usa autosave.
+- Campos de texto usam debounce curto/perda de foco/Enter; acoes diretas, como selecionar executavel, alternar admin e adicionar pastas, salvam imediatamente.
 - O drag and drop da area `Diretorios de save` depende de `tkinterdnd2` ativo na raiz e de registros nos widgets visiveis sob o cursor.
 - Se o DnD falhar, mantenha `Selecionar pasta` como fallback; nao remova a area visual de arrastar pastas.
 

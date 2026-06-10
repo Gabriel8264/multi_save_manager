@@ -15,13 +15,21 @@ from app_ui.theme import (
     TEXT_PRIMARY,
     TEXT_SECONDARY,
 )
-from app_ui.window_utils import center_window
-from app_ui.widgets import PathListEditor, ValidatedEntry
+from app_ui.widgets import CloseButton, PathListEditor, ValidatedEntry
 from core.launch_manager import validate_launch_config
 from core.validators import validate_game_name
 
 
-class GameManagerWindow(ctk.CTkToplevel):
+MANAGER_MIN_WIDTH = 980
+MANAGER_MIN_HEIGHT = 620
+LEFT_PANEL_WIDTH = 380
+RIGHT_PANEL_WIDTH = 570
+LAUNCH_CARD_HEIGHT = 132
+LAUNCH_PATH_MAX_CHARS = 46
+AUTOSAVE_DELAY_MS = 700
+
+
+class GameManagerWindow(ctk.CTkFrame):
     def __init__(
         self,
         master,
@@ -31,10 +39,20 @@ class GameManagerWindow(ctk.CTkToplevel):
         get_launch_config_for_game,
         on_save,
         on_delete,
+        on_close=None,
+        overlay_color=None,
+        auto_focus=True,
     ):
-        super().__init__(master)
-        self.withdraw()
-        self._set_initial_alpha(0.0)
+        super().__init__(
+            master,
+            width=MANAGER_MIN_WIDTH,
+            height=MANAGER_MIN_HEIGHT,
+            fg_color=SURFACE_PRIMARY,
+            bg_color=overlay_color or "transparent",
+            corner_radius=0,
+            border_width=0,
+            border_color=BORDER_COLOR,
+        )
         self.master_window = master
         self.dnd_context = dnd_context
         self.list_games = list_games
@@ -42,30 +60,53 @@ class GameManagerWindow(ctk.CTkToplevel):
         self.get_launch_config_for_game = get_launch_config_for_game
         self.on_save = on_save
         self.on_delete = on_delete
+        self.on_close = on_close
+        self.auto_focus = auto_focus
         self.selected_game = None
         self.game_buttons = {}
         self._compact_layout = False
+        self._loading_game = False
+        self._pending_autosave_after = None
+        self._last_saved_signature = None
 
-        self.title("Gerenciar jogos")
-        self.resizable(False, False)
-        self.configure(fg_color=SURFACE_SECONDARY)
+        self.grid_propagate(False)
         self._ensure_dnd_for_window()
 
         self.shell = ctk.CTkFrame(
             self,
-            fg_color=SURFACE_PRIMARY,
-            corner_radius=22,
-            border_width=1,
-            border_color=BORDER_COLOR,
+            fg_color="transparent",
+            corner_radius=0,
+            border_width=0,
         )
         self.shell.grid(row=0, column=0, sticky="nsew", padx=0, pady=0)
         self.shell.grid_columnconfigure(0, weight=1)
-        self.shell.grid_rowconfigure(0, weight=1)
+        self.shell.grid_rowconfigure(1, weight=1)
+
+        self.modal_header = ctk.CTkFrame(self.shell, fg_color="transparent")
+        self.modal_header.grid(row=0, column=0, sticky="ew", padx=16, pady=(12, 0))
+        self.modal_header.grid_columnconfigure(0, weight=1)
+
+        self.modal_title = ctk.CTkLabel(
+            self.modal_header,
+            text="Gerenciar jogos",
+            font=("Segoe UI Bold", 18),
+            text_color=TEXT_PRIMARY,
+            anchor="w",
+        )
+        self.modal_title.grid(row=0, column=0, sticky="w")
+
+        self.close_button = CloseButton(
+            self.modal_header,
+            command=self._handle_close,
+            size=34,
+            icon_size=12,
+        )
+        self.close_button.grid(row=0, column=1, sticky="e")
 
         self.body = ctk.CTkFrame(self.shell, fg_color="transparent")
-        self.body.grid(row=0, column=0, sticky="nsew", padx=14, pady=14)
-        self.body.grid_columnconfigure(0, weight=2)
-        self.body.grid_columnconfigure(1, weight=3)
+        self.body.grid(row=1, column=0, sticky="nsew", padx=14, pady=14)
+        self.body.grid_columnconfigure(0, weight=0, minsize=LEFT_PANEL_WIDTH)
+        self.body.grid_columnconfigure(1, weight=1, minsize=RIGHT_PANEL_WIDTH)
         self.body.grid_rowconfigure(0, weight=1)
 
         self.grid_columnconfigure(0, weight=2)
@@ -75,11 +116,9 @@ class GameManagerWindow(ctk.CTkToplevel):
         self._build_editor()
         self.refresh()
         self.start_new_game()
-        self._fit_to_master()
         self.bind("<Configure>", self._on_resize)
         self.after(90, self._show_when_ready)
         self.after(120, self._bind_mousewheel_scopes)
-        self.protocol("WM_DELETE_WINDOW", self._handle_close)
 
     def _ensure_dnd_for_window(self):
         if not self.dnd_context:
@@ -198,12 +237,14 @@ class GameManagerWindow(ctk.CTkToplevel):
     def _build_game_list(self):
         self.left_panel = ctk.CTkFrame(
             self.body,
+            width=LEFT_PANEL_WIDTH,
             fg_color=SURFACE_SECONDARY,
             corner_radius=16,
             border_width=1,
             border_color=BORDER_COLOR,
         )
         self.left_panel.grid(row=0, column=0, sticky="nsew", padx=(0, 7), pady=0)
+        self.left_panel.grid_propagate(False)
         self.left_panel.grid_columnconfigure(0, weight=1)
         self.left_panel.grid_rowconfigure(2, weight=1)
 
@@ -256,12 +297,14 @@ class GameManagerWindow(ctk.CTkToplevel):
     def _build_editor(self):
         self.right_panel = ctk.CTkFrame(
             self.body,
+            width=RIGHT_PANEL_WIDTH,
             fg_color=SURFACE_SECONDARY,
             corner_radius=16,
             border_width=1,
             border_color=BORDER_COLOR,
         )
         self.right_panel.grid(row=0, column=1, sticky="nsew", padx=(7, 0), pady=0)
+        self.right_panel.grid_propagate(False)
         self.right_panel.grid_columnconfigure(0, weight=1)
         self.right_panel.grid_rowconfigure(0, weight=0)
         self.right_panel.grid_rowconfigure(1, weight=0)
@@ -331,14 +374,17 @@ class GameManagerWindow(ctk.CTkToplevel):
 
         self.launch_card = ctk.CTkFrame(
             self.right_panel,
+            height=LAUNCH_CARD_HEIGHT,
             fg_color=SURFACE_PRIMARY,
             corner_radius=12,
             border_width=1,
             border_color=BORDER_COLOR,
         )
         self.launch_card.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 5))
+        self.launch_card.grid_propagate(False)
         self.launch_card.grid_columnconfigure(0, weight=1)
         self.launch_card.grid_columnconfigure(1, weight=0)
+        self.launch_card.grid_columnconfigure(2, weight=0)
 
         ctk.CTkLabel(
             self.launch_card,
@@ -354,8 +400,9 @@ class GameManagerWindow(ctk.CTkToplevel):
             font=("Segoe UI", 11),
             text_color=TEXT_SECONDARY,
             anchor="w",
+            width=240,
         )
-        self.launch_path_label.grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 5))
+        self.launch_path_label.grid(row=1, column=0, sticky="w", padx=10, pady=(0, 5))
 
         self.launch_select_button = ctk.CTkButton(
             self.launch_card,
@@ -406,6 +453,7 @@ class GameManagerWindow(ctk.CTkToplevel):
             self.launch_card,
             text="Executar como administrador",
             variable=self.launch_admin_var,
+            command=self._autosave_now,
             text_color=TEXT_SECONDARY,
             checkbox_width=18,
             checkbox_height=18,
@@ -421,21 +469,32 @@ class GameManagerWindow(ctk.CTkToplevel):
             dialog_parent=self,
             on_validation_change=self._handle_field_validation_change,
         )
+        self._wrap_paths_editor_changes()
         self.paths_editor.grid(row=4, column=0, sticky="nsew", padx=18, pady=(0, 6))
         self.name_field.entry.bind(
             "<KeyRelease>",
-            lambda _event: self.after_idle(self._refresh_validation_status),
+            self._handle_autosave_text_event,
             add="+",
         )
         self.name_field.entry.bind(
             "<FocusOut>",
-            lambda _event: self.after_idle(self._refresh_validation_status),
+            self._handle_autosave_commit_event,
             add="+",
         )
+        self.name_field.entry.bind(
+            "<Return>",
+            self._handle_autosave_commit_event,
+            add="+",
+        )
+        self.launch_arguments_entry.bind("<KeyRelease>", self._handle_autosave_text_event, add="+")
+        self.launch_arguments_entry.bind("<FocusOut>", self._handle_autosave_commit_event, add="+")
+        self.launch_arguments_entry.bind("<Return>", self._handle_autosave_commit_event, add="+")
+        self.paths_editor.textbox.bind("<KeyRelease>", self._handle_autosave_text_event, add="+")
+        self.paths_editor.textbox.bind("<FocusOut>", self._handle_autosave_commit_event, add="+")
 
         self.status_label = ctk.CTkLabel(
             self.right_panel,
-            text="Preencha os dados do jogo e salve as alterações.",
+            text="As alterações são salvas automaticamente.",
             font=("Segoe UI", 12),
             text_color=TEXT_SECONDARY,
             anchor="w",
@@ -446,17 +505,6 @@ class GameManagerWindow(ctk.CTkToplevel):
         self.button_row = ctk.CTkFrame(self.right_panel, fg_color="transparent")
         self.button_row.grid(row=6, column=0, sticky="ew", padx=18, pady=(0, 14))
         self.button_row.grid_columnconfigure(0, weight=1)
-        self.button_row.grid_columnconfigure(1, weight=1)
-
-        self.save_button = ctk.CTkButton(
-            self.button_row,
-            text="Adicionar jogo",
-            command=self.save_game,
-            height=38,
-            fg_color=ACCENT_COLOR,
-            hover_color=ACCENT_HOVER,
-        )
-        self.save_button.grid(row=0, column=0, columnspan=2, padx=0, sticky="ew")
 
         self.delete_button = ctk.CTkButton(
             self.button_row,
@@ -466,7 +514,7 @@ class GameManagerWindow(ctk.CTkToplevel):
             hover_color=("#dc2626", "#b91c1c"),
             height=38,
         )
-        self.delete_button.grid(row=0, column=1, padx=(8, 0), sticky="ew")
+        self.delete_button.grid(row=0, column=0, padx=0, sticky="ew")
         self.delete_button.grid_remove()
 
     def refresh(self, selected_game=None):
@@ -512,6 +560,8 @@ class GameManagerWindow(ctk.CTkToplevel):
             self.start_new_game()
 
     def select_game(self, game):
+        self._cancel_pending_autosave()
+        self._loading_game = True
         self.selected_game = game
         self.name_field.set(game)
         self.paths_editor.set_paths(self.get_paths_for_game(game))
@@ -521,13 +571,15 @@ class GameManagerWindow(ctk.CTkToplevel):
         self.game_visual_label.configure(text=self._game_initials(game), text_color=TEXT_PRIMARY)
         self.game_visual.configure(fg_color=SURFACE_TERTIARY, border_color=ACCENT_COLOR)
         self.status_label.configure(text="", text_color=TEXT_SECONDARY)
-        self.save_button.configure(text="Salvar alterações")
-        self.save_button.grid_configure(column=0, columnspan=1, padx=(0, 8), sticky="ew")
         self.delete_button.grid()
         self.delete_button.configure(state="normal")
+        self._loading_game = False
+        self._last_saved_signature = self._current_autosave_signature()
         self._refresh_button_states()
 
     def start_new_game(self):
+        self._cancel_pending_autosave()
+        self._loading_game = True
         self.selected_game = None
         self.name_field.clear()
         self.paths_editor.set_paths([])
@@ -536,13 +588,28 @@ class GameManagerWindow(ctk.CTkToplevel):
         self.title_label.configure(text="Adicionar jogo")
         self.game_visual_label.configure(text="+", text_color=ACCENT_COLOR)
         self.game_visual.configure(fg_color=SURFACE_TERTIARY, border_color=ACCENT_COLOR)
-        self.status_label.configure(text="")
-        self.save_button.configure(text="Adicionar jogo")
-        self.save_button.grid_configure(column=0, columnspan=2, padx=0, sticky="ew")
+        self.status_label.configure(
+            text="Crie o jogo preenchendo os dados. As alterações serão salvas automaticamente.",
+            text_color=TEXT_SECONDARY,
+        )
         self.delete_button.grid_remove()
         self.delete_button.configure(state="disabled")
+        self._loading_game = False
+        self._last_saved_signature = self._current_autosave_signature()
         self._refresh_button_states()
-        self.name_field.focus()
+        if self.auto_focus or self.winfo_ismapped():
+            self.name_field.focus()
+
+    def _wrap_paths_editor_changes(self):
+        original_append_paths = self.paths_editor.append_paths
+
+        def append_paths_with_autosave(paths):
+            before = self.paths_editor.get_paths()
+            original_append_paths(paths)
+            if self.paths_editor.get_paths() != before:
+                self._autosave_now()
+
+        self.paths_editor.append_paths = append_paths_with_autosave
 
     def _game_initials(self, game):
         parts = [part for part in game.replace("_", " ").replace("-", " ").split() if part]
@@ -570,9 +637,22 @@ class GameManagerWindow(ctk.CTkToplevel):
 
     def _refresh_launch_label(self):
         if self.launch_file_path:
-            self.launch_path_label.configure(text=self.launch_file_path, text_color=TEXT_PRIMARY)
+            display_path = self._compact_launch_path(self.launch_file_path)
+            self.launch_path_label.configure(text=display_path, text_color=TEXT_PRIMARY)
         else:
             self.launch_path_label.configure(text="Nenhum arquivo configurado.", text_color=TEXT_SECONDARY)
+
+    def _compact_launch_path(self, path):
+        path = str(path or "")
+        if len(path) <= LAUNCH_PATH_MAX_CHARS:
+            return path
+
+        file_name = Path(path).name
+        if len(file_name) + 6 >= LAUNCH_PATH_MAX_CHARS:
+            return f"...\\{file_name[-(LAUNCH_PATH_MAX_CHARS - 4):]}"
+
+        prefix_length = LAUNCH_PATH_MAX_CHARS - len(file_name) - 5
+        return f"{path[:prefix_length]}...\\{file_name}"
 
     def _select_launch_file(self):
         file_path = filedialog.askopenfilename(
@@ -596,11 +676,13 @@ class GameManagerWindow(ctk.CTkToplevel):
         self.launch_file_path = str(Path(file_path))
         self._refresh_launch_label()
         self._refresh_validation_status()
+        self._autosave_now()
 
     def _clear_launch_file(self):
         self.launch_file_path = ""
         self._refresh_launch_label()
         self._refresh_validation_status()
+        self._autosave_now()
 
     def _refresh_validation_status(self):
         if not self.winfo_exists():
@@ -631,7 +713,46 @@ class GameManagerWindow(ctk.CTkToplevel):
                 text_color=TEXT_PRIMARY,
             )
 
-    def save_game(self):
+    def _handle_autosave_text_event(self, _event=None):
+        self._refresh_validation_status()
+        self._schedule_autosave()
+
+    def _handle_autosave_commit_event(self, _event=None):
+        self._autosave_now()
+        return None
+
+    def _schedule_autosave(self):
+        if self._loading_game:
+            return
+
+        if self._pending_autosave_after:
+            self.after_cancel(self._pending_autosave_after)
+        self._pending_autosave_after = self.after(AUTOSAVE_DELAY_MS, self._autosave_now)
+
+    def _cancel_pending_autosave(self):
+        if self._pending_autosave_after:
+            self.after_cancel(self._pending_autosave_after)
+            self._pending_autosave_after = None
+
+    def _current_autosave_signature(self):
+        return (
+            self.selected_game,
+            self.name_field.get().strip(),
+            tuple(self.paths_editor.get_paths()),
+            self.launch_file_path,
+            self.launch_arguments_entry.get(),
+            bool(self.launch_admin_var.get()),
+        )
+
+    def _autosave_now(self):
+        if self._loading_game:
+            return
+
+        self._cancel_pending_autosave()
+        signature = self._current_autosave_signature()
+        if signature == self._last_saved_signature:
+            return
+
         valid_name = self.name_field.validate(show_error=True)
         valid_paths = self.paths_editor.validate(show_error=True)
         try:
@@ -642,17 +763,22 @@ class GameManagerWindow(ctk.CTkToplevel):
 
         if not (valid_name and valid_paths):
             self.status_label.configure(
-                text="Corrija os campos destacados antes de salvar.",
+                text="Corrija os campos destacados para salvar automaticamente.",
                 text_color=("#dc2626", "#f87171"),
             )
             return
 
+        self._last_saved_signature = signature
+        self.status_label.configure(text="Salvando automaticamente...", text_color=TEXT_SECONDARY)
         self.on_save(
             self.selected_game,
             self.name_field.get(),
             self.paths_editor.get_paths(),
             launch_config.__dict__,
         )
+
+    def save_game(self):
+        self._autosave_now()
 
     def delete_game(self):
         if not self.selected_game:
@@ -670,6 +796,7 @@ class GameManagerWindow(ctk.CTkToplevel):
             self.on_delete(self.selected_game)
 
     def show_error(self, title, message):
+        self._last_saved_signature = None
         self.status_label.configure(text=message, text_color=("#dc2626", "#f87171"))
         messagebox.showerror(title, message, parent=self)
 
@@ -686,7 +813,6 @@ class GameManagerWindow(ctk.CTkToplevel):
         self.launch_arguments_entry.configure(state=state)
         self.launch_admin_checkbox.configure(state=state)
         self.new_button.configure(state=state)
-        self.save_button.configure(state=state)
         self.delete_button.configure(state=state if self.selected_game else "disabled")
 
         for button in self.game_buttons.values():
@@ -699,19 +825,16 @@ class GameManagerWindow(ctk.CTkToplevel):
             pass
 
     def _show_when_ready(self):
-        self._fit_to_master()
         if not self.winfo_exists():
             return
 
         self._stabilize_initial_layout()
         self._register_window_drop_targets()
         self.update_idletasks()
-        self.deiconify()
-        self.update_idletasks()
-        self.lift()
-        self.focus_set()
-        self.name_field.focus()
-        self.after(30, lambda: self._set_initial_alpha(1.0))
+        if self.auto_focus:
+            self.lift()
+            self.focus_set()
+            self.name_field.focus()
 
     def _stabilize_initial_layout(self):
         if not self.winfo_exists():
@@ -729,18 +852,15 @@ class GameManagerWindow(ctk.CTkToplevel):
             if canvas:
                 canvas.yview_moveto(0)
 
-    def _fit_to_master(self):
-        screen_width, screen_height = self._get_screen_size()
-        width = min(max(920, int(screen_width * 0.78)), screen_width - 48)
-        height = min(max(560, int(screen_height * 0.78)), screen_height - 64)
-        self.geometry(f"{width}x{height}")
-        center_window(self, self.master_window)
-
     def _get_screen_size(self):
         return self.winfo_screenwidth(), self.winfo_screenheight()
 
     def _handle_close(self):
-        self.destroy()
+        self._autosave_now()
+        if self.on_close:
+            self.on_close()
+        else:
+            self.destroy()
 
     def _on_resize(self, _event=None):
         compact_layout = self.winfo_width() < 980
@@ -752,15 +872,15 @@ class GameManagerWindow(ctk.CTkToplevel):
         if compact_layout:
             self.left_panel.grid_configure(row=0, column=0, padx=0, pady=(0, 8), sticky="nsew")
             self.right_panel.grid_configure(row=1, column=0, padx=0, pady=(8, 0), sticky="nsew")
-            self.body.grid_columnconfigure(0, weight=1)
+            self.body.grid_columnconfigure(0, weight=1, minsize=LEFT_PANEL_WIDTH)
             self.body.grid_columnconfigure(1, weight=0)
             self.body.grid_rowconfigure(0, weight=1)
             self.body.grid_rowconfigure(1, weight=2)
         else:
             self.left_panel.grid_configure(row=0, column=0, padx=(0, 7), pady=0, sticky="nsew")
             self.right_panel.grid_configure(row=0, column=1, padx=(7, 0), pady=0, sticky="nsew")
-            self.body.grid_columnconfigure(0, weight=2)
-            self.body.grid_columnconfigure(1, weight=3)
+            self.body.grid_columnconfigure(0, weight=0, minsize=LEFT_PANEL_WIDTH)
+            self.body.grid_columnconfigure(1, weight=1, minsize=RIGHT_PANEL_WIDTH)
             self.body.grid_rowconfigure(0, weight=1)
             self.body.grid_rowconfigure(1, weight=0)
 

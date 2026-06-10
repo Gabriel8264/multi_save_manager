@@ -6,10 +6,11 @@ import tkinter.messagebox as messagebox
 from pathlib import Path
 
 import customtkinter as ctk
+from PIL import ImageEnhance, ImageGrab, ImageTk
 
 from app_ui.dialogs import PromptDialog
 from app_ui.dnd_support import enable_tkdnd, get_dnd_ctk_base
-from app_ui.game_manager_window import GameManagerWindow
+from app_ui.game_manager_window import GameManagerWindow, MANAGER_MIN_HEIGHT, MANAGER_MIN_WIDTH
 from app_ui.theme import (
     ACCENT_COLOR,
     ACCENT_HOVER,
@@ -26,7 +27,6 @@ from app_ui.theme import (
     WARNING_COLOR,
     apply_theme,
 )
-from app_ui.window_utils import center_window, center_window_near_parent_top
 from app_ui.widgets import BusyOverlay, GameLibraryCard, GameLibraryListItem, ProfileCard
 from core.config_manager import obter_diretorios_jogo
 from core.collections_manager import (
@@ -80,6 +80,11 @@ from core.user_manager import get_current_user
 from core.validators import validate_profile_name
 
 
+GAME_MANAGER_OVERLAY_COLOR = "#10141d"
+GAME_MANAGER_PANEL_INSET = 12
+GAME_MANAGER_PANEL_RADIUS = 24
+
+
 class SaveManagerApp(get_dnd_ctk_base()):
     def __init__(self):
         apply_theme(obter_tema())
@@ -111,7 +116,13 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self.current_page = "home"
         self.game_tool_mode = "overview"
         self.game_manager = None
-        self._game_manager_open_after = None
+        self.game_manager_overlay = None
+        self.modal_layer = None
+        self._active_modal_close_callback = None
+        self._persistent_modal_widgets = set()
+        self._game_manager_overlay_canvas = None
+        self._game_manager_overlay_image = None
+        self._game_manager_panel_bounds = (0, 0, 0, 0)
         self._game_manager_initial_game = None
         self._compact_layout = False
         self._compact_header = False
@@ -119,13 +130,24 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self._library_grid_columns = 0
         self._library_grid_refresh_after = None
         self.library_cards = {}
+        self.library_card_signatures = {}
         self.home_library_cards = {}
+        self.home_shelf_cards = {"favorites": {}, "recents": {}}
+        self.home_shelf_card_signatures = {"favorites": {}, "recents": {}}
+        self.home_shelf_empty_labels = {}
         self.library_filter = "all"
         self.collection_cards = {}
         self.collection_filter = "all"
+        self.profile_cards = {}
+        self.profile_empty_label = None
         self._collection_grid_columns = 0
         self.library_mode = "collection"
         self.user_collection_cards = {}
+        self.collection_empty_card = None
+        self.open_collection_back_row = None
+        self.open_collection_empty_label = None
+        self.open_collection_game_cards = {}
+        self.open_collection_game_card_signatures = {}
         self.open_collection_id = ""
         self._page_built = {}
 
@@ -397,13 +419,15 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self._start_authenticated_app()
 
     def _destroy_main_ui(self):
-        if getattr(self, "_game_manager_open_after", None) is not None:
-            self.after_cancel(self._game_manager_open_after)
-            self._game_manager_open_after = None
         if getattr(self, "game_manager", None) is not None and self.game_manager.winfo_exists():
             self.game_manager.destroy()
             self.game_manager = None
-        for attr in ("busy_overlay", "header", "content"):
+        if getattr(self, "game_manager_overlay", None) is not None and self.game_manager_overlay.winfo_exists():
+            self.game_manager_overlay.place_forget()
+            self.game_manager_overlay = None
+        if hasattr(self, "_persistent_modal_widgets"):
+            self._persistent_modal_widgets.clear()
+        for attr in ("busy_overlay", "modal_layer", "header", "content"):
             widget = getattr(self, attr, None)
             if widget is not None and widget.winfo_exists():
                 widget.destroy()
@@ -520,6 +544,98 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self.sidebar.grid_forget()
 
         self._build_pages()
+        self._build_modal_layer()
+        self._prebuild_game_manager_modal()
+
+    def _build_modal_layer(self):
+        self.modal_layer = ctk.CTkFrame(
+            self,
+            fg_color=GAME_MANAGER_OVERLAY_COLOR,
+            corner_radius=0,
+        )
+        self.modal_layer.place_forget()
+        self.modal_layer.bind("<Button-1>", self._handle_modal_background_click)
+        self.bind("<Escape>", self._handle_modal_escape, add="+")
+
+    def _prepare_modal_layer(self, close_callback, fg_color=GAME_MANAGER_OVERLAY_COLOR):
+        if not self.modal_layer or not self.modal_layer.winfo_exists():
+            return
+
+        self._clear_modal_layer_content()
+        self._active_modal_close_callback = close_callback
+        self.modal_layer.configure(fg_color=fg_color)
+        self.modal_layer.place(x=0, y=0, relwidth=1, relheight=1)
+        self.modal_layer.lift()
+
+    def _clear_modal_layer_content(self):
+        if not self.modal_layer or not self.modal_layer.winfo_exists():
+            return
+
+        for child in self.modal_layer.winfo_children():
+            if child in self._persistent_modal_widgets:
+                child.place_forget()
+                continue
+            child.destroy()
+        self._game_manager_overlay_canvas = None
+        self._game_manager_overlay_image = None
+        self._game_manager_panel_bounds = (0, 0, 0, 0)
+
+    def _hide_modal_layer(self):
+        if self.modal_layer and self.modal_layer.winfo_exists():
+            self._clear_modal_layer_content()
+            self.modal_layer.place_forget()
+        self._active_modal_close_callback = None
+
+    def _create_internal_modal_panel(
+        self,
+        width,
+        height,
+        *,
+        relx=0.5,
+        rely=0.5,
+        x=None,
+        y=None,
+        anchor="center",
+        fg_color=SURFACE_PRIMARY,
+        corner_radius=16,
+        border_width=1,
+        border_color=BORDER_COLOR,
+    ):
+        modal = ctk.CTkFrame(
+            self.modal_layer,
+            width=width,
+            height=height,
+            fg_color=fg_color,
+            bg_color=GAME_MANAGER_OVERLAY_COLOR,
+            corner_radius=corner_radius,
+            border_width=border_width,
+            border_color=border_color,
+        )
+        modal.grid_propagate(False)
+        modal.bind("<Button-1>", lambda _event: "break")
+        place_options = {"anchor": anchor}
+        if x is not None:
+            place_options["x"] = x
+        else:
+            place_options["relx"] = relx
+        if y is not None:
+            place_options["y"] = y
+        else:
+            place_options["rely"] = rely
+        modal.place(**place_options)
+        return modal
+
+    def _handle_modal_background_click(self, _event=None):
+        if self._active_modal_close_callback:
+            self._active_modal_close_callback()
+            return "break"
+        return None
+
+    def _handle_modal_escape(self, _event=None):
+        if self.modal_layer and self.modal_layer.winfo_ismapped() and self._active_modal_close_callback:
+            self._active_modal_close_callback()
+            return "break"
+        return None
 
     def _build_user_nav(self):
         user = get_current_user()
@@ -613,7 +729,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
 
     def _build_pages(self):
         self.pages = {}
-        for page_name in ("home", "library", "game"):
+        for page_name in ("home", "library", "game", "mods", "settings"):
             page = ctk.CTkFrame(self.page_host, fg_color="transparent")
             page.grid(row=0, column=0, sticky="nsew")
             page.grid_columnconfigure(0, weight=1)
@@ -623,13 +739,19 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self._build_home_page()
         self._build_library_page()
         self._build_game_page()
+        self._build_placeholder_page(
+            "mods",
+            "Mods",
+            "Estrutura preparada para gerenciamento de mods futuramente.",
+        )
+        self._build_placeholder_page(
+            "settings",
+            "Config",
+            "Estrutura preparada para configurações avançadas futuramente.",
+        )
         self._show_page("home")
 
     def _navigate(self, page_name):
-        if page_name in {"mods", "settings"}:
-            self._set_status(f"Página '{page_name}' preparada para uma etapa futura.", "info")
-            return
-
         if page_name == "game" and not self.current_game:
             self._set_status("Selecione um jogo nas Coleções primeiro.", "info")
             page_name = "library"
@@ -656,6 +778,42 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self._sync_library_navigation_area(page_name)
         if page_name == "home":
             self._refresh_home_shelves()
+
+    def _build_placeholder_page(self, page_name, title, description):
+        if self._page_built.get(page_name):
+            return
+
+        page = self.pages[page_name]
+        page.grid_columnconfigure(0, weight=1)
+        page.grid_rowconfigure(0, weight=1)
+
+        card = ctk.CTkFrame(
+            page,
+            fg_color=SURFACE_PRIMARY,
+            corner_radius=14,
+            border_width=1,
+            border_color=BORDER_COLOR,
+        )
+        card.grid(row=0, column=0, sticky="nsew")
+        card.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(
+            card,
+            text=title,
+            font=("Segoe UI Bold", 24),
+            text_color=TEXT_PRIMARY,
+            anchor="w",
+        ).grid(row=0, column=0, sticky="ew", padx=18, pady=(18, 4))
+
+        ctk.CTkLabel(
+            card,
+            text=description,
+            font=("Segoe UI", 12),
+            text_color=TEXT_SECONDARY,
+            anchor="w",
+        ).grid(row=1, column=0, sticky="ew", padx=18, pady=(0, 18))
+
+        self._page_built[page_name] = True
 
     def _sync_sidebar_context_highlight(self):
         target_game = self.current_game if self.current_page == "game" else ""
@@ -1747,16 +1905,20 @@ class SaveManagerApp(get_dnd_ctk_base()):
     def _open_more_actions_modal(self):
         if hasattr(self, "more_actions_modal") and self.more_actions_modal.winfo_exists():
             self.more_actions_modal.lift()
-            self.more_actions_modal.focus_force()
             return
 
-        modal = ctk.CTkToplevel(self)
+        self._prepare_modal_layer(self._close_more_actions_modal)
+        modal = self._create_internal_modal_panel(
+            width=380,
+            height=430,
+            fg_color=SURFACE_SECONDARY,
+            corner_radius=14,
+            border_width=1,
+            border_color=BORDER_COLOR,
+            y=76,
+            anchor="n",
+        )
         self.more_actions_modal = modal
-        modal.title("Mais ações")
-        modal.geometry("380x430")
-        modal.resizable(False, False)
-        modal.transient(self)
-        modal.configure(fg_color=SURFACE_SECONDARY)
         modal.grid_columnconfigure(0, weight=1)
         modal.grid_rowconfigure(1, weight=1)
 
@@ -1789,7 +1951,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
         for row, (text, command, fg_color, hover_color, text_color) in enumerate(actions):
             def run_action(callback=command):
                 if modal.winfo_exists():
-                    modal.destroy()
+                    self._close_more_actions_modal()
                 callback()
 
             button = ctk.CTkButton(
@@ -1807,7 +1969,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
         ctk.CTkButton(
             modal,
             text="Fechar",
-            command=modal.destroy,
+            command=self._close_more_actions_modal,
             height=36,
             fg_color=SURFACE_PRIMARY,
             hover_color=SURFACE_TERTIARY,
@@ -1816,8 +1978,10 @@ class SaveManagerApp(get_dnd_ctk_base()):
             border_color=BORDER_COLOR,
         ).grid(row=2, column=0, sticky="ew", padx=20, pady=(0, 18))
 
-        center_window_near_parent_top(modal, self, top_margin=76)
-        modal.grab_set()
+    def _close_more_actions_modal(self):
+        if hasattr(self, "more_actions_modal") and self.more_actions_modal.winfo_exists():
+            self.more_actions_modal.destroy()
+        self._hide_modal_layer()
 
     def _load_selected_profile(self):
         if not self.selected_profile:
@@ -1830,6 +1994,39 @@ class SaveManagerApp(get_dnd_ctk_base()):
 
     def _get_library_query(self):
         return self.library_search.get().strip() if hasattr(self, "library_search") else ""
+
+    def _game_card_signature(self, game, profile_count):
+        return (
+            game.name,
+            bool(game.favorite),
+            game.cover_path or "",
+            game.banner_path or "",
+            tuple(game.save_paths or ()),
+            profile_count,
+        )
+
+    def _get_reusable_game_card(self, cards, signatures, key, signature):
+        card = cards.get(key)
+        if card and card.winfo_exists() and signatures.get(key) == signature:
+            return card
+
+        if card and card.winfo_exists():
+            card.destroy()
+        cards.pop(key, None)
+        signatures.pop(key, None)
+        return None
+
+    def _remember_game_card_signature(self, signatures, key, signature):
+        signatures[key] = signature
+
+    def _prune_missing_game_cards(self, cards, signatures, valid_keys):
+        for key in list(cards):
+            if key in valid_keys:
+                continue
+            card = cards.pop(key, None)
+            signatures.pop(key, None)
+            if card and card.winfo_exists():
+                card.destroy()
 
     def _load_games(self, initial=False):
         ordered_games = self._get_sorted_games("")
@@ -1897,9 +2094,6 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self._library_grid_refresh_after = self.after(80, refresh_grid)
 
     def _refresh_game_library_cards(self, query=""):
-        for widget in self.game_library_frame.winfo_children():
-            widget.destroy()
-        self.library_cards = {}
         all_filtered_games = listar_jogos_biblioteca(query)
         games = [
             game for game in all_filtered_games
@@ -1915,59 +2109,100 @@ class SaveManagerApp(get_dnd_ctk_base()):
             )
         )
         self._update_library_filter_buttons(favorite_total)
+
+        for card in self.library_cards.values():
+            if card.winfo_exists():
+                card.grid_remove()
+        if hasattr(self, "library_empty_state") and self.library_empty_state.winfo_exists():
+            self.library_empty_state.grid_remove()
+
         if not games:
-            empty_state = ctk.CTkFrame(
-                self.game_library_frame,
-                fg_color="transparent",
-            )
-            empty_state.grid(row=0, column=0, sticky="nsew", padx=24, pady=28)
-            ctk.CTkLabel(
-                empty_state,
-                text=(
-                    "Nenhum favorito ainda"
-                    if self.library_filter == "favorites"
-                    else ("Nenhum jogo cadastrado" if not query else "Nenhum jogo encontrado")
-                ),
-                font=("Segoe UI Bold", 22),
-                text_color=TEXT_PRIMARY,
-                anchor="w",
-            ).grid(row=0, column=0, sticky="w")
-            ctk.CTkLabel(
-                empty_state,
-                text=(
-                    "Marque uma estrela nos cards para fixar jogos aqui."
-                    if self.library_filter == "favorites"
-                    else ("Cadastre jogos para montar sua coleção." if not query else "Tente outro termo de busca.")
-                ),
-                font=("Segoe UI", 13),
-                text_color=TEXT_SECONDARY,
-                anchor="w",
-            ).grid(row=1, column=0, sticky="w", pady=(6, 14))
-            if not query and self.library_filter == "all":
-                ctk.CTkButton(
-                    empty_state,
+            if not hasattr(self, "library_empty_state") or not self.library_empty_state.winfo_exists():
+                self.library_empty_state = ctk.CTkFrame(
+                    self.game_library_frame,
+                    fg_color="transparent",
+                )
+                self.library_empty_title = ctk.CTkLabel(
+                    self.library_empty_state,
+                    text="",
+                    font=("Segoe UI Bold", 22),
+                    text_color=TEXT_PRIMARY,
+                    anchor="w",
+                )
+                self.library_empty_title.grid(row=0, column=0, sticky="w")
+                self.library_empty_description = ctk.CTkLabel(
+                    self.library_empty_state,
+                    text="",
+                    font=("Segoe UI", 13),
+                    text_color=TEXT_SECONDARY,
+                    anchor="w",
+                )
+                self.library_empty_description.grid(row=1, column=0, sticky="w", pady=(6, 14))
+                self.library_empty_manage_button = ctk.CTkButton(
+                    self.library_empty_state,
                     text="Gerenciar jogos",
                     command=self._open_game_manager,
                     width=140,
                     height=38,
                     fg_color=ACCENT_COLOR,
                     hover_color=ACCENT_HOVER,
-                ).grid(row=2, column=0, sticky="w")
+                )
+                self.library_empty_manage_button.grid(row=2, column=0, sticky="w")
+
+            self.library_empty_state.grid(row=0, column=0, sticky="nsew", padx=24, pady=28)
+            self.library_empty_title.configure(
+                text=(
+                    "Nenhum favorito ainda"
+                    if self.library_filter == "favorites"
+                    else ("Nenhum jogo cadastrado" if not query else "Nenhum jogo encontrado")
+                )
+            )
+            self.library_empty_description.configure(
+                text=(
+                    "Marque uma estrela nos cards para fixar jogos aqui."
+                    if self.library_filter == "favorites"
+                    else ("Cadastre jogos para montar sua coleção." if not query else "Tente outro termo de busca.")
+                )
+            )
+            if not query and self.library_filter == "all":
+                self.library_empty_manage_button.grid()
+            else:
+                self.library_empty_manage_button.grid_remove()
             return
 
+        self._prune_missing_game_cards(
+            self.library_cards,
+            self.library_card_signatures,
+            {game.name for game in games},
+        )
         for index, game in enumerate(games):
             profile_count = len(listar_perfis(game.name))
-            card = GameLibraryListItem(
-                self.game_library_frame,
-                game=game,
-                selected=game.name == self.sidebar_selected_game,
-                on_select=self._select_game_from_card,
-                on_open=self._open_game_from_card,
-                on_favorite=self._toggle_favorite_from_card,
-                profile_count=profile_count,
+            signature = self._game_card_signature(game, profile_count)
+            card = self._get_reusable_game_card(
+                self.library_cards,
+                self.library_card_signatures,
+                game.name,
+                signature,
             )
+            if not card or not card.winfo_exists():
+                card = GameLibraryListItem(
+                    self.game_library_frame,
+                    game=game,
+                    selected=game.name == self.sidebar_selected_game,
+                    on_select=self._select_game_from_card,
+                    on_open=self._open_game_from_card,
+                    on_favorite=self._toggle_favorite_from_card,
+                    profile_count=profile_count,
+                )
+                self.library_cards[game.name] = card
+                self._remember_game_card_signature(self.library_card_signatures, game.name, signature)
+            else:
+                card.game = game
+                card.profile_count = profile_count
+                card.set_favorite(game.favorite)
+                card.set_selected(game.name == self.sidebar_selected_game)
+                self._remember_game_card_signature(self.library_card_signatures, game.name, signature)
             card.grid(row=index, column=0, sticky="ew", padx=3, pady=(4 if index == 0 else 2, 2))
-            self.library_cards[game.name] = card
 
     def _refresh_library_collection(self):
         self._refresh_game_selector()
@@ -1977,9 +2212,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
         if not hasattr(self, "collection_grid_frame"):
             return
 
-        for widget in self.collection_grid_frame.winfo_children():
-            widget.destroy()
-        self.user_collection_cards = {}
+        self._hide_collection_widgets()
 
         if self.open_collection_id:
             self._render_open_user_collection()
@@ -1992,6 +2225,36 @@ class SaveManagerApp(get_dnd_ctk_base()):
         )
 
         if not collections:
+            self._show_collection_empty()
+            return
+
+        for index, collection in enumerate(collections):
+            card = self.user_collection_cards.get(collection.id)
+            if not card or not card.winfo_exists():
+                card = self._build_user_collection_card(collection)
+                self.user_collection_cards[collection.id] = card
+            else:
+                card.title_label.configure(text=collection.name)
+                card.count_label.configure(text=f"{collection.game_count} jogo(s)")
+            card.grid(row=index, column=0, sticky="ew", padx=8, pady=(8 if index == 0 else 4, 4))
+
+    def _hide_collection_widgets(self):
+        for card in self.user_collection_cards.values():
+            if card.winfo_exists():
+                card.grid_remove()
+        for card in self.open_collection_game_cards.values():
+            if card.winfo_exists():
+                card.grid_remove()
+        for widget in (
+            self.collection_empty_card,
+            self.open_collection_back_row,
+            self.open_collection_empty_label,
+        ):
+            if widget and widget.winfo_exists():
+                widget.grid_remove()
+
+    def _show_collection_empty(self):
+        if not self.collection_empty_card or not self.collection_empty_card.winfo_exists():
             empty = ctk.CTkFrame(
                 self.collection_grid_frame,
                 fg_color=SURFACE_PRIMARY,
@@ -1999,7 +2262,6 @@ class SaveManagerApp(get_dnd_ctk_base()):
                 border_width=1,
                 border_color=BORDER_COLOR,
             )
-            empty.grid(row=0, column=0, sticky="ew", padx=8, pady=8)
             empty.grid_columnconfigure(0, weight=1)
             ctk.CTkLabel(
                 empty,
@@ -2015,12 +2277,8 @@ class SaveManagerApp(get_dnd_ctk_base()):
                 text_color=TEXT_SECONDARY,
                 anchor="w",
             ).grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 16))
-            return
-
-        for index, collection in enumerate(collections):
-            card = self._build_user_collection_card(collection)
-            card.grid(row=index, column=0, sticky="ew", padx=8, pady=(8 if index == 0 else 4, 4))
-            self.user_collection_cards[collection.id] = card
+            self.collection_empty_card = empty
+        self.collection_empty_card.grid(row=0, column=0, sticky="ew", padx=8, pady=8)
 
     def _build_user_collection_card(self, collection):
         card = ctk.CTkFrame(
@@ -2033,21 +2291,23 @@ class SaveManagerApp(get_dnd_ctk_base()):
         card.grid_columnconfigure(0, weight=1)
         card.grid_columnconfigure(1, weight=0)
 
-        ctk.CTkLabel(
+        card.title_label = ctk.CTkLabel(
             card,
             text=collection.name,
             font=("Segoe UI Semibold", 15),
             text_color=TEXT_PRIMARY,
             anchor="w",
-        ).grid(row=0, column=0, sticky="ew", padx=14, pady=(12, 2))
+        )
+        card.title_label.grid(row=0, column=0, sticky="ew", padx=14, pady=(12, 2))
 
-        ctk.CTkLabel(
+        card.count_label = ctk.CTkLabel(
             card,
             text=f"{collection.game_count} jogo(s)",
             font=("Segoe UI", 11),
             text_color=TEXT_SECONDARY,
             anchor="w",
-        ).grid(row=1, column=0, sticky="ew", padx=14, pady=(0, 12))
+        )
+        card.count_label.grid(row=1, column=0, sticky="ew", padx=14, pady=(0, 12))
 
         ctk.CTkButton(
             card,
@@ -2073,46 +2333,70 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self.library_game_context_label.configure(text=collection.name)
         self.collection_meta_label.configure(text=f"{collection.game_count} jogo(s) nesta coleção")
 
-        top_row = ctk.CTkFrame(self.collection_grid_frame, fg_color="transparent")
-        top_row.grid(row=0, column=0, sticky="ew", padx=8, pady=(4, 10))
-        ctk.CTkButton(
-            top_row,
-            text="Voltar para Coleções",
-            width=150,
-            height=30,
-            command=self._close_user_collection,
-            fg_color=SURFACE_SECONDARY,
-            hover_color=SURFACE_TERTIARY,
-            text_color=TEXT_PRIMARY,
-            border_width=1,
-            border_color=BORDER_COLOR,
-        ).grid(row=0, column=0, sticky="w")
+        if not self.open_collection_back_row or not self.open_collection_back_row.winfo_exists():
+            self.open_collection_back_row = ctk.CTkFrame(self.collection_grid_frame, fg_color="transparent")
+            ctk.CTkButton(
+                self.open_collection_back_row,
+                text="Voltar para Coleções",
+                width=150,
+                height=30,
+                command=self._close_user_collection,
+                fg_color=SURFACE_SECONDARY,
+                hover_color=SURFACE_TERTIARY,
+                text_color=TEXT_PRIMARY,
+                border_width=1,
+                border_color=BORDER_COLOR,
+            ).grid(row=0, column=0, sticky="w")
+        self.open_collection_back_row.grid(row=0, column=0, sticky="ew", padx=8, pady=(4, 10))
 
         if not collection.game_ids:
-            ctk.CTkLabel(
-                self.collection_grid_frame,
-                text="Esta coleção ainda está vazia.",
-                font=("Segoe UI", 13),
-                text_color=TEXT_SECONDARY,
-                anchor="w",
-            ).grid(row=1, column=0, sticky="ew", padx=12, pady=18)
+            if not self.open_collection_empty_label or not self.open_collection_empty_label.winfo_exists():
+                self.open_collection_empty_label = ctk.CTkLabel(
+                    self.collection_grid_frame,
+                    text="Esta coleção ainda está vazia.",
+                    font=("Segoe UI", 13),
+                    text_color=TEXT_SECONDARY,
+                    anchor="w",
+                )
+            self.open_collection_empty_label.grid(row=1, column=0, sticky="ew", padx=12, pady=18)
             return
 
         games_by_name = {game.name: game for game in listar_jogos_biblioteca("")}
+        visible_games = [games_by_name.get(game_id) for game_id in collection.game_ids]
+        visible_games = [game for game in visible_games if game]
+        self._prune_missing_game_cards(
+            self.open_collection_game_cards,
+            self.open_collection_game_card_signatures,
+            {game.name for game in visible_games},
+        )
         row = 1
-        for game_id in collection.game_ids:
-            game = games_by_name.get(game_id)
-            if not game:
-                continue
-            card = GameLibraryCard(
-                self.collection_grid_frame,
-                game=game,
-                selected=False,
-                on_select=self._open_game_from_collection,
-                on_open=self._open_game_from_collection,
-                on_favorite=self._toggle_favorite_from_card,
-                profile_count=len(listar_perfis(game.name)),
+        for game in visible_games:
+            profile_count = len(listar_perfis(game.name))
+            signature = self._game_card_signature(game, profile_count)
+            card = self._get_reusable_game_card(
+                self.open_collection_game_cards,
+                self.open_collection_game_card_signatures,
+                game.name,
+                signature,
             )
+            if not card or not card.winfo_exists():
+                card = GameLibraryCard(
+                    self.collection_grid_frame,
+                    game=game,
+                    selected=False,
+                    on_select=self._open_game_from_collection,
+                    on_open=self._open_game_from_collection,
+                    on_favorite=self._toggle_favorite_from_card,
+                    profile_count=profile_count,
+                )
+                self.open_collection_game_cards[game.name] = card
+                self._remember_game_card_signature(self.open_collection_game_card_signatures, game.name, signature)
+            else:
+                card.game = game
+                card.profile_count = profile_count
+                card.set_favorite(game.favorite)
+                card.set_selected(False)
+                self._remember_game_card_signature(self.open_collection_game_card_signatures, game.name, signature)
             card.grid(row=row, column=0, sticky="w", padx=8, pady=6)
             row += 1
 
@@ -2130,22 +2414,22 @@ class SaveManagerApp(get_dnd_ctk_base()):
             self.create_collection_name_entry.focus_set()
             return
 
-        modal_width = 360
-        modal_height = 240
-        self.create_collection_modal = ctk.CTkToplevel(self)
-        self.create_collection_modal.title("Criar coleção")
-        self.create_collection_modal.geometry(f"{modal_width}x{modal_height}")
-        self.create_collection_modal.resizable(False, False)
-        self.create_collection_modal.transient(self)
-
-        frame = ctk.CTkFrame(
-            self.create_collection_modal,
+        self._prepare_modal_layer(self._close_create_collection_modal)
+        self.create_collection_modal = self._create_internal_modal_panel(
+            width=390,
+            height=260,
             fg_color=SURFACE_PRIMARY,
-            corner_radius=14,
+            corner_radius=16,
             border_width=1,
             border_color=BORDER_COLOR,
         )
-        frame.pack(fill="both", expand=True, padx=14, pady=14)
+        self.create_collection_modal.grid_columnconfigure(0, weight=1)
+
+        frame = ctk.CTkFrame(
+            self.create_collection_modal,
+            fg_color="transparent",
+        )
+        frame.grid(row=0, column=0, sticky="nsew", padx=14, pady=14)
         frame.grid_columnconfigure(0, weight=1)
 
         ctk.CTkLabel(
@@ -2192,7 +2476,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
         ctk.CTkButton(
             actions,
             text="Cancelar",
-            command=self.create_collection_modal.destroy,
+            command=self._close_create_collection_modal,
             height=34,
             fg_color=SURFACE_SECONDARY,
             hover_color=SURFACE_TERTIARY,
@@ -2200,9 +2484,13 @@ class SaveManagerApp(get_dnd_ctk_base()):
             border_width=1,
             border_color=BORDER_COLOR,
         ).grid(row=0, column=1, sticky="ew", padx=(6, 0))
-        center_window(self.create_collection_modal, self)
         self.create_collection_modal.lift()
         self.create_collection_modal.after(80, self._focus_create_collection_name)
+
+    def _close_create_collection_modal(self):
+        if hasattr(self, "create_collection_modal") and self.create_collection_modal.winfo_exists():
+            self.create_collection_modal.destroy()
+        self._hide_modal_layer()
 
     def _focus_create_collection_name(self):
         if not (
@@ -2225,7 +2513,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
             return
 
         self.open_collection_id = collection.id
-        self.create_collection_modal.destroy()
+        self._close_create_collection_modal()
         self._refresh_collection_grid()
 
     def _select_game_from_collection(self, selected_game):
@@ -2244,40 +2532,68 @@ class SaveManagerApp(get_dnd_ctk_base()):
         if not hasattr(self, "home_favorites_frame") or not hasattr(self, "home_recents_frame"):
             return
 
-        for frame in (self.home_favorites_frame, self.home_recents_frame):
-            for widget in frame.winfo_children():
-                widget.destroy()
-        self.home_library_cards = {}
-
         all_games = listar_jogos_biblioteca("")
         favorites = [game for game in all_games if game.favorite][:8]
         recents = listar_jogos_recentes_biblioteca()[:8]
 
-        self._populate_home_shelf(self.home_favorites_frame, favorites, "Nenhum favorito ainda.")
-        self._populate_home_shelf(self.home_recents_frame, recents, "Nenhum jogo recente ainda.")
+        self._populate_home_shelf(self.home_favorites_frame, favorites, "Nenhum favorito ainda.", "favorites")
+        self._populate_home_shelf(self.home_recents_frame, recents, "Nenhum jogo recente ainda.", "recents")
 
-    def _populate_home_shelf(self, frame, games, empty_text):
+    def _populate_home_shelf(self, frame, games, empty_text, shelf_key):
+        shelf_cards = self.home_shelf_cards.setdefault(shelf_key, {})
+        shelf_signatures = self.home_shelf_card_signatures.setdefault(shelf_key, {})
+        for card in shelf_cards.values():
+            if card.winfo_exists():
+                card.grid_remove()
+
+        empty_label = self.home_shelf_empty_labels.get(shelf_key)
+        if empty_label and empty_label.winfo_exists():
+            empty_label.grid_remove()
+
         if not games:
-            ctk.CTkLabel(
-                frame,
-                text=empty_text,
-                font=("Segoe UI", 13),
-                text_color=TEXT_SECONDARY,
-                anchor="w",
-            ).grid(row=0, column=0, sticky="w", padx=16, pady=18)
+            self._prune_missing_game_cards(shelf_cards, shelf_signatures, set())
+            if not empty_label or not empty_label.winfo_exists():
+                empty_label = ctk.CTkLabel(
+                    frame,
+                    text=empty_text,
+                    font=("Segoe UI", 13),
+                    text_color=TEXT_SECONDARY,
+                    anchor="w",
+                )
+                self.home_shelf_empty_labels[shelf_key] = empty_label
+            empty_label.configure(text=empty_text)
+            empty_label.grid(row=0, column=0, sticky="w", padx=16, pady=18)
             return
 
+        self._prune_missing_game_cards(shelf_cards, shelf_signatures, {game.name for game in games})
         for index, game in enumerate(games):
-            card = GameLibraryCard(
-                frame,
-                game=game,
-                selected=game.name == self.current_game,
-                on_select=self._open_game_from_home,
-                on_open=self._open_game_from_home,
-                on_favorite=self._toggle_favorite_from_card,
-                profile_count=len(listar_perfis(game.name)),
-                compact=True,
+            profile_count = len(listar_perfis(game.name))
+            signature = self._game_card_signature(game, profile_count)
+            card = self._get_reusable_game_card(
+                shelf_cards,
+                shelf_signatures,
+                game.name,
+                signature,
             )
+            if not card or not card.winfo_exists():
+                card = GameLibraryCard(
+                    frame,
+                    game=game,
+                    selected=game.name == self.current_game,
+                    on_select=self._open_game_from_home,
+                    on_open=self._open_game_from_home,
+                    on_favorite=self._toggle_favorite_from_card,
+                    profile_count=profile_count,
+                    compact=True,
+                )
+                shelf_cards[game.name] = card
+                self._remember_game_card_signature(shelf_signatures, game.name, signature)
+            else:
+                card.game = game
+                card.profile_count = profile_count
+                card.set_favorite(game.favorite)
+                card.set_selected(game.name == self.current_game)
+                self._remember_game_card_signature(shelf_signatures, game.name, signature)
             card.grid(row=0, column=index, sticky="ns", padx=(12 if index == 0 else 0, 12), pady=12)
             self.home_library_cards[game.name] = card
 
@@ -2621,19 +2937,15 @@ class SaveManagerApp(get_dnd_ctk_base()):
             self._set_status(f"'{self.current_game}' iniciado.", "success")
 
     def _refresh_profiles(self):
-        for widget in self.profile_list.winfo_children():
-            widget.destroy()
+        for card in self.profile_cards.values():
+            if card.winfo_exists():
+                card.grid_remove()
+        if self.profile_empty_label and self.profile_empty_label.winfo_exists():
+            self.profile_empty_label.grid_remove()
 
         if not self.current_game:
             self.profile_count_label.configure(text="0 perfis")
-            empty = ctk.CTkLabel(
-                self.profile_list,
-                text="Cadastre um jogo para começar a criar perfis.",
-                text_color=TEXT_SECONDARY,
-                anchor="w",
-                justify="left",
-            )
-            empty.grid(row=0, column=0, sticky="ew", padx=18, pady=18)
+            self._show_profile_empty("Cadastre um jogo para começar a criar perfis.")
             self._update_selected_profile(None)
             self._bind_profile_mousewheel()
             return
@@ -2649,26 +2961,36 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self._update_selected_profile(self.selected_profile)
 
         if not filtered_profiles:
-            empty = ctk.CTkLabel(
-                self.profile_list,
-                text="Nenhum perfil encontrado com esse filtro.",
-                text_color=TEXT_SECONDARY,
-                anchor="w",
-                justify="left",
-            )
-            empty.grid(row=0, column=0, sticky="ew", padx=18, pady=18)
+            self._show_profile_empty("Nenhum perfil encontrado com esse filtro.")
             self._bind_profile_mousewheel()
             return
 
         for index, profile in enumerate(filtered_profiles):
-            card = ProfileCard(
-                self.profile_list,
-                profile_name=profile,
-                active=profile == active_profile,
-                on_activate=self._activate_profile,
-            )
+            card = self.profile_cards.get(profile)
+            if not card or not card.winfo_exists():
+                card = ProfileCard(
+                    self.profile_list,
+                    profile_name=profile,
+                    active=profile == active_profile,
+                    on_activate=self._activate_profile,
+                )
+                self.profile_cards[profile] = card
+            else:
+                card.set_active(profile == active_profile)
             card.grid(row=index, column=0, sticky="ew", padx=14, pady=10)
         self._bind_profile_mousewheel()
+
+    def _show_profile_empty(self, text):
+        if not self.profile_empty_label or not self.profile_empty_label.winfo_exists():
+            self.profile_empty_label = ctk.CTkLabel(
+                self.profile_list,
+                text=text,
+                text_color=TEXT_SECONDARY,
+                anchor="w",
+                justify="left",
+            )
+        self.profile_empty_label.configure(text=text)
+        self.profile_empty_label.grid(row=0, column=0, sticky="ew", padx=18, pady=18)
 
     def _bind_profile_mousewheel(self):
         if not hasattr(self, "profile_list"):
@@ -2784,6 +3106,10 @@ class SaveManagerApp(get_dnd_ctk_base()):
         home_card = self.home_library_cards.get(game_name)
         if home_card and home_card.winfo_exists():
             home_card.set_favorite(favorite)
+        for shelf_cards in self.home_shelf_cards.values():
+            shelf_card = shelf_cards.get(game_name)
+            if shelf_card and shelf_card.winfo_exists():
+                shelf_card.set_favorite(favorite)
 
         favorite_total = len([game for game in listar_jogos_biblioteca("") if game.favorite])
         self._update_library_filter_buttons(favorite_total)
@@ -2792,42 +3118,169 @@ class SaveManagerApp(get_dnd_ctk_base()):
         if self.busy:
             return
 
-        if self.game_manager and self.game_manager.winfo_exists():
-            if self._game_manager_initial_game:
-                self.game_manager.refresh(selected_game=self._game_manager_initial_game)
-                self._game_manager_initial_game = None
-            self.game_manager.lift()
-            self.game_manager.focus_set()
+        self._prebuild_game_manager_modal()
+        if not (self.game_manager and self.game_manager.winfo_exists()):
             return
 
-        if self._game_manager_open_after is not None:
-            return
+        self._prepare_modal_layer(self._close_game_manager_modal)
+        self.game_manager_overlay = self.modal_layer
+        self._build_game_manager_dim_background()
 
-        self._game_manager_open_after = self.after(80, self._create_game_manager)
+        selected_game = self._game_manager_initial_game or self.game_manager.selected_game
+        self._game_manager_initial_game = None
+        self.game_manager.refresh(selected_game=selected_game)
+        self.after_idle(self._reveal_game_manager_modal)
 
-    def _create_game_manager(self):
-        self._game_manager_open_after = None
-
-        if self.busy:
+    def _prebuild_game_manager_modal(self):
+        if not self.modal_layer or not self.modal_layer.winfo_exists():
             return
 
         if self.game_manager and self.game_manager.winfo_exists():
-            self.game_manager.lift()
-            self.game_manager.focus_set()
             return
 
+        self.game_manager_overlay = self.modal_layer
         self.game_manager = GameManagerWindow(
-            self,
+            self.game_manager_overlay,
             dnd_context=self.dnd_context,
             list_games=lambda: self._get_sorted_games(""),
             get_paths_for_game=obter_diretorios_jogo,
             get_launch_config_for_game=obter_launch_config_jogo,
             on_save=self._save_game_from_manager,
             on_delete=self._delete_game_from_manager,
+            on_close=self._close_game_manager_modal,
+            overlay_color=GAME_MANAGER_OVERLAY_COLOR,
+            auto_focus=False,
         )
-        if self._game_manager_initial_game:
-            self.game_manager.refresh(selected_game=self._game_manager_initial_game)
-            self._game_manager_initial_game = None
+        self.game_manager.bind("<Button-1>", lambda _event: "break")
+        self.game_manager.update_idletasks()
+        self.game_manager.place_forget()
+        self._persistent_modal_widgets.add(self.game_manager)
+
+    def _reveal_game_manager_modal(self):
+        if not (
+            self.game_manager_overlay
+            and self.game_manager_overlay.winfo_exists()
+            and self.game_manager
+            and self.game_manager.winfo_exists()
+        ):
+            return
+
+        self.game_manager.update_idletasks()
+        self._draw_game_manager_panel_background()
+        self.game_manager.place(relx=0.5, rely=0.5, anchor="center")
+        self.game_manager.lift()
+        self.game_manager.focus_set()
+        if hasattr(self.game_manager, "name_field"):
+            self.game_manager.name_field.focus()
+
+    def _build_game_manager_dim_background(self):
+        if not self.game_manager_overlay or not self.game_manager_overlay.winfo_exists():
+            return
+
+        width = max(self.winfo_width(), 1)
+        height = max(self.winfo_height(), 1)
+        try:
+            self.game_manager_overlay.lower()
+            self.update_idletasks()
+            x = self.winfo_rootx()
+            y = self.winfo_rooty()
+            screenshot = ImageGrab.grab(bbox=(x, y, x + width, y + height))
+            dimmed = ImageEnhance.Brightness(screenshot).enhance(0.55)
+            self._game_manager_overlay_image = ImageTk.PhotoImage(dimmed)
+        except Exception:
+            self._game_manager_overlay_image = None
+        finally:
+            self.game_manager_overlay.lift()
+
+        background = tk.Canvas(
+            self.game_manager_overlay,
+            borderwidth=0,
+            highlightthickness=0,
+            bg=GAME_MANAGER_OVERLAY_COLOR,
+        )
+        self._game_manager_overlay_canvas = background
+        background.place(x=0, y=0, relwidth=1, relheight=1)
+        if self._game_manager_overlay_image:
+            background.create_image(0, 0, image=self._game_manager_overlay_image, anchor="nw")
+        background.bind("<Button-1>", self._handle_game_manager_overlay_click)
+
+    def _draw_game_manager_panel_background(self):
+        background = getattr(self, "_game_manager_overlay_canvas", None)
+        if not background or not self.game_manager_overlay or not self.game_manager_overlay.winfo_exists():
+            return
+
+        width = max(self.winfo_width(), 1)
+        height = max(self.winfo_height(), 1)
+        panel_width = MANAGER_MIN_WIDTH + (GAME_MANAGER_PANEL_INSET * 2)
+        panel_height = MANAGER_MIN_HEIGHT + (GAME_MANAGER_PANEL_INSET * 2)
+        panel_x = max((width - panel_width) // 2, 0)
+        panel_y = max((height - panel_height) // 2, 0)
+        self._game_manager_panel_bounds = (
+            panel_x,
+            panel_y,
+            panel_x + panel_width,
+            panel_y + panel_height,
+        )
+        self._draw_rounded_panel(
+            background,
+            panel_x,
+            panel_y,
+            panel_x + panel_width,
+            panel_y + panel_height,
+            GAME_MANAGER_PANEL_RADIUS,
+        )
+
+    def _draw_rounded_panel(self, canvas, x1, y1, x2, y2, radius):
+        fill = self._theme_color_value(SURFACE_PRIMARY)
+        outline = self._theme_color_value(BORDER_COLOR)
+        points = [
+            x1 + radius,
+            y1,
+            x2 - radius,
+            y1,
+            x2,
+            y1,
+            x2,
+            y1 + radius,
+            x2,
+            y2 - radius,
+            x2,
+            y2,
+            x2 - radius,
+            y2,
+            x1 + radius,
+            y2,
+            x1,
+            y2,
+            x1,
+            y2 - radius,
+            x1,
+            y1 + radius,
+            x1,
+            y1,
+        ]
+        canvas.create_polygon(points, smooth=True, fill=fill, outline=outline, width=1)
+
+    def _theme_color_value(self, color):
+        if isinstance(color, tuple):
+            return color[1] if ctk.get_appearance_mode() == "Dark" else color[0]
+        return color
+
+    def _handle_game_manager_overlay_click(self, event):
+        x1, y1, x2, y2 = getattr(self, "_game_manager_panel_bounds", (0, 0, 0, 0))
+        if x1 <= event.x <= x2 and y1 <= event.y <= y2:
+            return "break"
+        self._close_game_manager_modal()
+        return "break"
+
+    def _close_game_manager_modal(self):
+        if self.game_manager and self.game_manager.winfo_exists():
+            if hasattr(self.game_manager, "_autosave_now"):
+                self.game_manager._autosave_now()
+            self.game_manager.place_forget()
+
+        self._hide_modal_layer()
+        self.game_manager_overlay = self.modal_layer
 
     def _ask_profile_name(self, title, initial_value=""):
         dialog = PromptDialog(
