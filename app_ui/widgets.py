@@ -59,6 +59,67 @@ def _load_ctk_image(path_value, size):
         return None
 
 
+def animate_modal_open(
+    modal_frame,
+    width,
+    height,
+    *,
+    relx=0.5,
+    rely=0.5,
+    x=None,
+    y=None,
+    anchor="center",
+    duration_ms=150,
+    start_scale=0.94,
+    on_complete=None,
+):
+    frames = 7
+    interval = max(duration_ms // frames, 1)
+    start_offset = max(int(height * (1 - start_scale) * 0.7), 8)
+
+    def ease_out_cubic(value):
+        return 1 - pow(1 - value, 3)
+
+    def place_with_offset(offset=0):
+        modal_frame.configure(width=width, height=height)
+        place_options = {
+            "anchor": anchor,
+        }
+        if x is not None:
+            place_options["x"] = x
+        else:
+            place_options["relx"] = relx
+            place_options["x"] = 0
+        if y is not None:
+            place_options["y"] = y + offset
+        else:
+            place_options["rely"] = rely
+            place_options["y"] = offset
+        modal_frame.place(**place_options)
+
+    def step(index=0):
+        if not modal_frame.winfo_exists():
+            return
+
+        progress = min(index / frames, 1)
+        eased = ease_out_cubic(progress)
+        offset = int(start_offset * (1 - eased))
+        place_with_offset(offset)
+        modal_frame.lift()
+        if index >= frames:
+            place_with_offset(0)
+            if on_complete:
+                on_complete()
+            return
+        modal_frame.after(interval, lambda: step(index + 1))
+
+    modal_frame.configure(width=width, height=height)
+    modal_frame.place(x=-10000, y=-10000, anchor="nw")
+    modal_frame.update_idletasks()
+    place_with_offset(start_offset)
+    modal_frame.after(interval, lambda: step(1))
+
+
 class CloseButton(ctk.CTkFrame):
     def __init__(
         self,

@@ -20,7 +20,7 @@ from core.launch_manager import validate_launch_config
 from core.validators import validate_game_name
 
 
-MANAGER_MIN_WIDTH = 980
+MANAGER_MIN_WIDTH = 1040
 MANAGER_MIN_HEIGHT = 620
 LEFT_PANEL_WIDTH = 380
 RIGHT_PANEL_WIDTH = 570

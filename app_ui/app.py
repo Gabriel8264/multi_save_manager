@@ -27,7 +27,13 @@ from app_ui.theme import (
     WARNING_COLOR,
     apply_theme,
 )
-from app_ui.widgets import BusyOverlay, GameLibraryCard, GameLibraryListItem, ProfileCard
+from app_ui.widgets import (
+    BusyOverlay,
+    GameLibraryCard,
+    GameLibraryListItem,
+    ProfileCard,
+    animate_modal_open,
+)
 from core.config_manager import obter_diretorios_jogo
 from core.collections_manager import (
     CollectionError,
@@ -116,6 +122,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self.current_page = "home"
         self.game_tool_mode = "overview"
         self.game_manager = None
+        self.game_manager_wrapper = None
         self.game_manager_overlay = None
         self.modal_layer = None
         self._active_modal_close_callback = None
@@ -422,6 +429,9 @@ class SaveManagerApp(get_dnd_ctk_base()):
         if getattr(self, "game_manager", None) is not None and self.game_manager.winfo_exists():
             self.game_manager.destroy()
             self.game_manager = None
+        if getattr(self, "game_manager_wrapper", None) is not None and self.game_manager_wrapper.winfo_exists():
+            self.game_manager_wrapper.destroy()
+            self.game_manager_wrapper = None
         if getattr(self, "game_manager_overlay", None) is not None and self.game_manager_overlay.winfo_exists():
             self.game_manager_overlay.place_forget()
             self.game_manager_overlay = None
@@ -613,17 +623,44 @@ class SaveManagerApp(get_dnd_ctk_base()):
         )
         modal.grid_propagate(False)
         modal.bind("<Button-1>", lambda _event: "break")
-        place_options = {"anchor": anchor}
-        if x is not None:
-            place_options["x"] = x
-        else:
-            place_options["relx"] = relx
-        if y is not None:
-            place_options["y"] = y
-        else:
-            place_options["rely"] = rely
-        modal.place(**place_options)
+        modal._modal_animation = {
+            "width": width,
+            "height": height,
+            "relx": relx,
+            "rely": rely,
+            "x": x,
+            "y": y,
+            "anchor": anchor,
+        }
+        modal.place(x=-10000, y=-10000, anchor="nw")
         return modal
+
+    def _animate_internal_modal_open(self, modal, on_complete=None):
+        animation = getattr(modal, "_modal_animation", None)
+        if not animation:
+            if on_complete:
+                on_complete()
+            return
+
+        self._prepare_modal_for_animation(modal, animation)
+        animate_modal_open(
+            modal,
+            animation["width"],
+            animation["height"],
+            relx=animation["relx"],
+            rely=animation["rely"],
+            x=animation["x"],
+            y=animation["y"],
+            anchor=animation["anchor"],
+            duration_ms=150,
+            start_scale=0.94,
+            on_complete=on_complete,
+        )
+
+    def _prepare_modal_for_animation(self, modal, animation):
+        modal.configure(width=animation["width"], height=animation["height"])
+        modal.place(x=-10000, y=-10000, anchor="nw")
+        modal.update_idletasks()
 
     def _handle_modal_background_click(self, _event=None):
         if self._active_modal_close_callback:
@@ -1977,6 +2014,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
             border_width=1,
             border_color=BORDER_COLOR,
         ).grid(row=2, column=0, sticky="ew", padx=20, pady=(0, 18))
+        self._animate_internal_modal_open(modal)
 
     def _close_more_actions_modal(self):
         if hasattr(self, "more_actions_modal") and self.more_actions_modal.winfo_exists():
@@ -2485,7 +2523,10 @@ class SaveManagerApp(get_dnd_ctk_base()):
             border_color=BORDER_COLOR,
         ).grid(row=0, column=1, sticky="ew", padx=(6, 0))
         self.create_collection_modal.lift()
-        self.create_collection_modal.after(80, self._focus_create_collection_name)
+        self._animate_internal_modal_open(
+            self.create_collection_modal,
+            on_complete=self._focus_create_collection_name,
+        )
 
     def _close_create_collection_modal(self):
         if hasattr(self, "create_collection_modal") and self.create_collection_modal.winfo_exists():
@@ -3139,8 +3180,22 @@ class SaveManagerApp(get_dnd_ctk_base()):
             return
 
         self.game_manager_overlay = self.modal_layer
-        self.game_manager = GameManagerWindow(
+        self.game_manager_wrapper = ctk.CTkFrame(
             self.game_manager_overlay,
+            width=MANAGER_MIN_WIDTH,
+            height=MANAGER_MIN_HEIGHT,
+            fg_color=GAME_MANAGER_OVERLAY_COLOR,
+            bg_color=GAME_MANAGER_OVERLAY_COLOR,
+            corner_radius=0,
+            border_width=0,
+        )
+        self.game_manager_wrapper.grid_propagate(False)
+        self.game_manager_wrapper.grid_columnconfigure(0, weight=1)
+        self.game_manager_wrapper.grid_rowconfigure(0, weight=1)
+        self.game_manager_wrapper.bind("<Button-1>", lambda _event: "break")
+
+        self.game_manager = GameManagerWindow(
+            self.game_manager_wrapper,
             dnd_context=self.dnd_context,
             list_games=lambda: self._get_sorted_games(""),
             get_paths_for_game=obter_diretorios_jogo,
@@ -3151,23 +3206,42 @@ class SaveManagerApp(get_dnd_ctk_base()):
             overlay_color=GAME_MANAGER_OVERLAY_COLOR,
             auto_focus=False,
         )
-        self.game_manager.bind("<Button-1>", lambda _event: "break")
+        self.game_manager.grid(row=0, column=0, sticky="nsew")
         self.game_manager.update_idletasks()
-        self.game_manager.place_forget()
-        self._persistent_modal_widgets.add(self.game_manager)
+        self.game_manager_wrapper.place_forget()
+        self._persistent_modal_widgets.add(self.game_manager_wrapper)
 
     def _reveal_game_manager_modal(self):
         if not (
             self.game_manager_overlay
             and self.game_manager_overlay.winfo_exists()
+            and self.game_manager_wrapper
+            and self.game_manager_wrapper.winfo_exists()
             and self.game_manager
             and self.game_manager.winfo_exists()
         ):
             return
 
+        self.game_manager_wrapper.configure(width=MANAGER_MIN_WIDTH, height=MANAGER_MIN_HEIGHT)
+        self.game_manager.configure(width=MANAGER_MIN_WIDTH, height=MANAGER_MIN_HEIGHT)
+        self.game_manager.grid(row=0, column=0, sticky="nsew")
+        self.game_manager_wrapper.update_idletasks()
+        self.game_manager.configure(width=MANAGER_MIN_WIDTH, height=MANAGER_MIN_HEIGHT)
+        self.game_manager.lift()
         self.game_manager.update_idletasks()
         self._draw_game_manager_panel_background()
-        self.game_manager.place(relx=0.5, rely=0.5, anchor="center")
+        self.game_manager_wrapper.configure(width=MANAGER_MIN_WIDTH, height=MANAGER_MIN_HEIGHT)
+        self.game_manager_wrapper.place(relx=0.5, rely=0.5, x=0, y=0, anchor="center")
+        self.game_manager_wrapper.lift()
+        self.game_manager.lift()
+        self._focus_game_manager_modal()
+
+    def _focus_game_manager_modal(self):
+        if not (self.game_manager and self.game_manager.winfo_exists()):
+            return
+
+        if self.game_manager_wrapper and self.game_manager_wrapper.winfo_exists():
+            self.game_manager_wrapper.lift()
         self.game_manager.lift()
         self.game_manager.focus_set()
         if hasattr(self.game_manager, "name_field"):
@@ -3277,7 +3351,8 @@ class SaveManagerApp(get_dnd_ctk_base()):
         if self.game_manager and self.game_manager.winfo_exists():
             if hasattr(self.game_manager, "_autosave_now"):
                 self.game_manager._autosave_now()
-            self.game_manager.place_forget()
+        if self.game_manager_wrapper and self.game_manager_wrapper.winfo_exists():
+            self.game_manager_wrapper.place_forget()
 
         self._hide_modal_layer()
         self.game_manager_overlay = self.modal_layer
