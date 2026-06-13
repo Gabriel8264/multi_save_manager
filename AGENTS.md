@@ -99,7 +99,7 @@ Fluxo principal de troca de perfil:
 - Avisos antes de trocar saves: `core/runtime_checks.py`.
 - Layout principal: `app_ui/app.py`.
 - Modal interno de cadastro de jogos: `app_ui/game_manager_window.py`.
-- Camada única de modais internos: `SaveManagerApp._prepare_modal_layer`, `_create_internal_modal_panel` e `_hide_modal_layer` em `app_ui/app.py`.
+- Infraestrutura atual de modais internos: `SaveManagerApp._build_modal_layer`, `_prepare_modal_layer`, `_create_internal_modal_panel`, `_hide_modal_layer` e o fluxo especial de `Gerenciar jogos` em `app_ui/app.py`. Leia `docs/MODALS.md` antes de mexer em overlay, animação ou z-order.
 - Componentes reutilizaveis: `app_ui/widgets.py`.
 - Paleta/tema: `app_ui/theme.py`.
 
@@ -107,8 +107,12 @@ Fluxo principal de troca de perfil:
 
 - A navegacao principal usa frames persistentes. Evite destruir/recriar `Home`, `Colecoes`, `GameContext`, `Mods` e `Config`; mostre/oculte frames e atualize textos/listas.
 - Todos os modais internos devem reutilizar `modal_layer` em `SaveManagerApp`. Nao crie `CTkToplevel` para fluxos internos como `Gerenciar jogos`, `Criar colecao` e `Mais acoes`.
+- Estado atual dos modais: `modal_layer` e filho direto da janela principal e acumula overlay, clique fora e container do modal. Nao existe `ModalRoot` separado com `overlay_dim` e `modal_slot`.
+- `Mais acoes` e `Criar colecao` criam paineis temporarios com `_create_internal_modal_panel(...)`.
 - `Gerenciar jogos` e pre-construido na inicializacao da UI principal por `_prebuild_game_manager_modal()` e deve ser apenas revelado/escondido. Nao destrua esse widget ao fechar.
-- Para novos modais internos, use `_prepare_modal_layer(...)`, `_create_internal_modal_panel(...)` e `_hide_modal_layer()` em vez de duplicar overlay, clique fora e Escape.
+- `Gerenciar jogos` possui fundo esmaecido especial com captura da janela via `ImageGrab`/`Canvas`; os demais modais nao usam exatamente o mesmo mecanismo visual.
+- A animacao global ativa e apenas de abertura, por `app_ui.widgets.animate_modal_open(...)`; nao ha animacao global de fechamento ativa.
+- Para novos modais internos, use `_prepare_modal_layer(...)`, `_create_internal_modal_panel(...)` e `_hide_modal_layer()` em vez de duplicar clique fora e Escape.
 - Cards/listas de jogos usam cache persistente. Clique, selecao e favorito devem atualizar apenas o item afetado.
 - Quando dados renderizados mudarem profundamente, como nome, capa/banner, caminhos ou contagem de perfis, use uma assinatura de dados e recrie somente o card afetado, nunca a tela inteira.
 

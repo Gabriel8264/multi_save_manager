@@ -16,7 +16,12 @@ from app_ui.theme import (
     TEXT_SECONDARY,
 )
 from app_ui.widgets import CloseButton, PathListEditor, ValidatedEntry
-from core.launch_manager import validate_launch_config
+from core.game_editor_service import (
+    build_game_editor_signature,
+    prepare_game_editor_save_payload,
+    prepare_launch_config,
+    prepare_launch_file_path,
+)
 from core.validators import validate_game_name
 
 
@@ -668,12 +673,12 @@ class GameManagerWindow(ctk.CTkFrame):
             return
 
         try:
-            validate_launch_config({"executable_path": file_path})
+            launch_file_path = prepare_launch_file_path(file_path)
         except ValueError as error:
             self.status_label.configure(text=str(error), text_color=("#dc2626", "#f87171"))
             return
 
-        self.launch_file_path = str(Path(file_path))
+        self.launch_file_path = launch_file_path
         self._refresh_launch_label()
         self._refresh_validation_status()
         self._autosave_now()
@@ -735,13 +740,13 @@ class GameManagerWindow(ctk.CTkFrame):
             self._pending_autosave_after = None
 
     def _current_autosave_signature(self):
-        return (
-            self.selected_game,
-            self.name_field.get().strip(),
-            tuple(self.paths_editor.get_paths()),
-            self.launch_file_path,
-            self.launch_arguments_entry.get(),
-            bool(self.launch_admin_var.get()),
+        return build_game_editor_signature(
+            current_name=self.selected_game,
+            new_name=self.name_field.get(),
+            save_paths=self.paths_editor.get_paths(),
+            executable_path=self.launch_file_path,
+            launch_arguments=self.launch_arguments_entry.get(),
+            launch_as_admin=self.launch_admin_var.get(),
         )
 
     def _autosave_now(self):
@@ -756,7 +761,7 @@ class GameManagerWindow(ctk.CTkFrame):
         valid_name = self.name_field.validate(show_error=True)
         valid_paths = self.paths_editor.validate(show_error=True)
         try:
-            launch_config = validate_launch_config(self._get_launch_config())
+            launch_config = prepare_launch_config(**self._get_launch_config())
         except ValueError as error:
             self.status_label.configure(text=str(error), text_color=("#dc2626", "#f87171"))
             return
@@ -768,13 +773,24 @@ class GameManagerWindow(ctk.CTkFrame):
             )
             return
 
+        try:
+            payload = prepare_game_editor_save_payload(
+                current_name=self.selected_game,
+                new_name=self.name_field.get(),
+                save_paths=self.paths_editor.get_paths(),
+                launch_config=launch_config,
+            )
+        except ValueError as error:
+            self.status_label.configure(text=str(error), text_color=("#dc2626", "#f87171"))
+            return
+
         self._last_saved_signature = signature
         self.status_label.configure(text="Salvando automaticamente...", text_color=TEXT_SECONDARY)
         self.on_save(
-            self.selected_game,
-            self.name_field.get(),
-            self.paths_editor.get_paths(),
-            launch_config.__dict__,
+            payload.current_name,
+            payload.new_name,
+            list(payload.save_paths),
+            payload.launch_config,
         )
 
     def save_game(self):
@@ -883,4 +899,3 @@ class GameManagerWindow(ctk.CTkFrame):
             self.body.grid_columnconfigure(1, weight=1, minsize=RIGHT_PANEL_WIDTH)
             self.body.grid_rowconfigure(0, weight=1)
             self.body.grid_rowconfigure(1, weight=0)
-

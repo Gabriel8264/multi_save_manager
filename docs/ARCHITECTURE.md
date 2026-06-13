@@ -101,6 +101,46 @@ Camada de aplicacao para biblioteca de jogos. Ela nao muda o formato do `config.
 - `excluir_jogo_com_dados(jogo)`: remove perfis, favoritos e config do jogo.
 - `alternar_favorito_jogo(jogo)` e `jogo_eh_favorito(jogo)`: fachada para favoritos.
 
+### `game_context_service.py`
+
+Camada de servico independente da UI para montar o contexto rapido de um jogo. Ela existe para evitar que telas CustomTkinter precisem combinar diretamente config, perfis, recentes e launch.
+
+- `get_game_context_summary(jogo)`: retorna caminhos de save, total de perfis, perfil ativo, config de inicializacao, estado de launch valido e iniciais visuais.
+- `open_game_save_directories(jogo)`: registra o jogo como recente, abre apenas diretorios existentes e retorna contadores/caminhos abertos ou ausentes.
+
+Essa camada nao importa CustomTkinter, tkinter nem widgets. Uma futura UI em PySide6 pode chamar as mesmas funcoes sem duplicar regras de negocio.
+
+### `game_editor_service.py`
+
+Camada de servico independente da UI para preparar salvamentos do editor `Gerenciar jogos`.
+
+- `build_game_editor_signature(...)`: gera a assinatura usada pelo autosave para detectar mudancas reais.
+- `prepare_launch_file_path(caminho)`: valida se o arquivo de inicializacao selecionado e `.exe` ou `.bat` e devolve o caminho normalizado para persistencia.
+- `prepare_game_editor_save_payload(...)`: valida nome, diretorios de save e configuracao de inicializacao antes de chamar a camada de persistencia.
+
+A tela continua responsavel por campos, mensagens, foco, botoes e drag and drop. O servico apenas valida e prepara payloads para reduzir acoplamento com CustomTkinter.
+
+### `collection_view_service.py`
+
+Camada de servico independente da UI para preparar dados da tela `Coleções`.
+
+- `get_collections_overview()`: lista colecoes do usuario atual e devolve titulo, texto de resumo e cards com contagem de jogos.
+- `get_open_collection_view(collection_id)`: resolve uma colecao aberta, associa seus `game_ids` aos jogos globais e informa jogos ausentes.
+- `create_collection(nome)`: fachada para criar colecao usando as validacoes de `collections_manager.py`.
+
+A UI continua responsavel por cards, botoes, modal de criacao e mensagens visuais. O servico concentra leitura, validacao, criacao e preparacao dos dados renderizados.
+
+### `save_view_service.py`
+
+Camada de servico independente da UI para preparar dados e acoes da area de Saves/Perfis.
+
+- `get_save_profiles_view(jogo, query, selected_profile)`: lista perfis, aplica filtro, identifica perfil ativo, resolve selecao atual e devolve dados prontos para renderizacao.
+- `get_profile_count(jogo)` e `get_active_save_profile(jogo)`: atalhos para resumos do contexto do jogo.
+- `activate_save_profile(...)`, `create_save_profile(...)`, `rename_save_profile(...)`, `delete_save_profile(...)`: fachadas para operacoes de perfil.
+- `save_active_profile_snapshot(...)`, `clear_current_save(...)`, `export_current_save(...)`: fachadas para acoes sobre o save atual.
+
+A tela continua responsavel por layout, cards, botoes, progresso, confirmacoes e mensagens. O servico centraliza leitura, regras de perfil ativo e chamadas ao `save_manager.py`.
+
 ### `launch_manager.py`
 
 Camada de inicialização de jogos.
@@ -110,6 +150,15 @@ Camada de inicialização de jogos.
 - Usa a pasta do arquivo como working directory.
 - Quando `launch_as_admin` é `true`, usa ShellExecuteW com verbo `runas` para pedir elevação/UAC apenas ao processo iniciado.
 - Mantém logs mínimos: jogo iniciado, falha ao iniciar e UAC cancelado.
+
+### `launch_service.py`
+
+Fachada independente da UI para executar uma configuracao de inicializacao e devolver resultado estruturado.
+
+- `execute_launch_config(config)`: valida e executa via `launch_manager.launch_game(...)`, preservando `.exe`, `.bat`, argumentos, working directory e `runas`.
+- Retorna `LaunchExecutionResult` com `success`, `cancelled`, `message` e `level`.
+
+A UI do botao `Jogar` nao chama `subprocess`, `os.startfile`, `ShellExecuteW` nem trata excecoes de launch diretamente; ela apenas exibe a mensagem retornada pelo servico.
 
 ### `save_manager.py`
 
@@ -144,6 +193,16 @@ Tambem bloqueia sobreposicao com caminhos internos do app:
 ### `path_resolver.py`
 
 Expande variaveis de ambiente, `~` e `{USERPROFILE}`. Tambem tenta mapear caminhos `C:\Users\<outro_usuario>\...` para o usuario atual quando a mesma subpasta existe.
+
+### `path_service.py`
+
+Camada independente da UI para operacoes de caminhos usadas por diretorios de save.
+
+- `validate_save_path_lines(...)`: valida linhas de caminhos e retorna linhas invalidas e caminhos normalizados.
+- `append_save_directories(...)`: processa caminhos vindos de DnD/selecao, aceita apenas pastas existentes e evita duplicatas por caminho resolvido.
+- `open_save_directories(...)` e `open_save_directory(...)`: abrem pastas pelo mecanismo do sistema, sem expor `os.startfile` para a UI.
+
+A UI continua responsavel por `filedialog`, DnD visual, textbox, cores, feedback e interacao do usuario.
 
 ### `runtime_checks.py`
 
@@ -186,9 +245,11 @@ Frames principais mantidos em memoria:
 
 Ao trocar pagina ou jogo, a regra e atualizar dados pontuais: textos, estado ativo, listas, cards afetados e paineis de contexto. Evite `destroy()` em containers estruturais.
 
-#### Camada unica de modais
+#### Camada de modais internos
 
-`SaveManagerApp` possui uma camada interna unica para modais:
+`SaveManagerApp` possui uma camada interna chamada `modal_layer`, criada por `_build_modal_layer()`.
+
+Funcoes principais:
 
 - `_prepare_modal_layer(close_callback)`;
 - `_create_internal_modal_panel(...)`;
@@ -196,9 +257,13 @@ Ao trocar pagina ou jogo, a regra e atualizar dados pontuais: textos, estado ati
 - `_handle_modal_background_click(...)`;
 - `_handle_modal_escape(...)`.
 
-Fluxos como `Gerenciar jogos`, `Criar colecao` e `Mais acoes` usam essa camada. Novos modais internos devem reutiliza-la para manter comportamento consistente de overlay, clique fora e tecla Esc.
+No estado atual, `modal_layer` acumula as funcoes de overlay, captura de clique fora e container do modal ativo. Nao existe um `ModalRoot` separado com `overlay_dim` e `modal_slot`.
 
-O `Gerenciar jogos` ainda usa um fundo esmaecido especial baseado em captura da janela e desenho do painel arredondado, mas a abertura/fechamento passam pela mesma camada modal. A estrutura do `GameManagerWindow` e pre-construida na inicializacao da UI principal por `_prebuild_game_manager_modal()`; o clique em `Gerenciar jogos` apenas atualiza dados, monta o overlay e revela o painel ja existente.
+Fluxos como `Mais acoes` e `Criar colecao` criam paineis temporarios como filhos diretos de `modal_layer`. O fluxo `Gerenciar jogos` tambem usa `modal_layer`, mas e uma excecao importante: ele e pre-construido por `_prebuild_game_manager_modal()` e revelado por `_reveal_game_manager_modal()`. Seu fundo esmaecido e especial, baseado em captura da janela com `ImageGrab` e desenho em um `Canvas`.
+
+A animacao generica ativa e apenas de abertura, via `app_ui.widgets.animate_modal_open(...)`. Nao ha animacao global de fechamento no estado atual.
+
+Detalhes completos da infraestrutura estao em `docs/MODALS.md`.
 
 #### Atualizacao granular de cards
 

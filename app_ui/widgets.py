@@ -1,4 +1,3 @@
-﻿import os
 import tkinter as tk
 import tkinter.filedialog as filedialog
 from pathlib import Path
@@ -25,7 +24,12 @@ from app_ui.theme import (
     WARNING_COLOR,
 )
 from core.path_resolver import resolver_caminho
-from core.validators import validate_save_path
+from core.path_service import (
+    append_save_directories,
+    open_save_directories,
+    open_save_directory,
+    validate_save_path_lines,
+)
 
 _IMAGE_CACHE = {}
 
@@ -118,6 +122,52 @@ def animate_modal_open(
     modal_frame.update_idletasks()
     place_with_offset(start_offset)
     modal_frame.after(interval, lambda: step(1))
+
+
+def animate_modal_close(modal_frame, *, duration_ms=120, end_offset=10, on_complete=None):
+    frames = 5
+    interval = max(duration_ms // frames, 1)
+
+    def ease_in_cubic(value):
+        return value * value * value
+
+    def safe_int(value, default=0):
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default
+
+    if not modal_frame.winfo_exists():
+        if on_complete:
+            on_complete()
+        return
+
+    place_info = modal_frame.place_info()
+    if not place_info:
+        if on_complete:
+            on_complete()
+        return
+
+    base_y = safe_int(place_info.get("y"), 0)
+
+    def step(index=0):
+        if not modal_frame.winfo_exists():
+            if on_complete:
+                on_complete()
+            return
+
+        progress = min(index / frames, 1)
+        offset = int(end_offset * ease_in_cubic(progress))
+        modal_frame.place_configure(y=base_y + offset)
+        modal_frame.lift()
+
+        if index >= frames:
+            if on_complete:
+                on_complete()
+            return
+        modal_frame.after(interval, lambda: step(index + 1))
+
+    step()
 
 
 class CloseButton(ctk.CTkFrame):
@@ -917,16 +967,8 @@ class PathListEditor(ctk.CTkFrame):
         ]
 
     def _find_invalid_path_lines(self):
-        invalid_lines = []
-        valid_paths = []
-
-        for line_number, path in self._get_path_lines():
-            try:
-                valid_paths.append(validate_save_path(path))
-            except ValueError:
-                invalid_lines.append(line_number)
-
-        return invalid_lines, valid_paths
+        result = validate_save_path_lines(self._get_path_lines())
+        return list(result.invalid_lines), list(result.valid_paths)
 
     def has_valid_paths(self):
         invalid_lines, valid_paths = self._find_invalid_path_lines()
@@ -963,42 +1005,22 @@ class PathListEditor(ctk.CTkFrame):
             self._set_feedback()
             return
 
-        for path in valid_paths:
-            os.startfile(str(Path(resolver_caminho(path))))
+        open_save_directories(valid_paths)
 
         self.textbox.configure(border_color=BORDER_COLOR)
         self._clear_path_highlights()
         self._set_feedback(f"Abrindo {len(valid_paths)} pasta(s) no Explorador de Arquivos.", SUCCESS_COLOR)
 
     def append_paths(self, paths):
-        normalized = self.get_paths()
-        normalized_resolved = {str(Path(resolver_caminho(path))) for path in normalized}
-        added_count = 0
-        changed = False
-        for path in paths:
-            cleaned = path.strip().strip("{").strip("}")
-            if not cleaned:
-                continue
-
-            resolved = Path(resolver_caminho(cleaned))
-            if not resolved.is_dir():
-                continue
-
-            resolved_str = str(resolved)
-            if resolved_str not in normalized_resolved:
-                normalized_resolved.add(resolved_str)
-                normalized.append(cleaned)
-                added_count += 1
-                changed = True
-
-        if changed:
-            self.set_paths(normalized)
+        result = append_save_directories(self.get_paths(), paths)
+        if result.changed:
+            self.set_paths(result.paths)
             self._refresh_path_highlights()
             self._set_feedback(
                 (
                     "Pasta adicionada aos diretórios de save."
-                    if added_count == 1
-                    else f"{added_count} pastas adicionadas aos diretórios de save."
+                    if result.added_count == 1
+                    else f"{result.added_count} pastas adicionadas aos diretórios de save."
                 ),
                 SUCCESS_COLOR,
             )
@@ -1022,7 +1044,7 @@ class PathListEditor(ctk.CTkFrame):
             return
 
         try:
-            normalized = validate_save_path(line_value)
+            open_save_directory(line_value)
         except ValueError:
             self.textbox.configure(border_color=ERROR_COLOR)
             self._highlight_invalid_lines([line])
@@ -1032,7 +1054,6 @@ class PathListEditor(ctk.CTkFrame):
         self.textbox.configure(border_color=BORDER_COLOR)
         self._clear_path_highlights()
         self._set_feedback("Abrindo pasta no Explorador de Arquivos.", SUCCESS_COLOR)
-        os.startfile(str(Path(resolver_caminho(normalized))))
 
     def validate(self, show_error=True):
         invalid_lines, valid_paths = self._find_invalid_path_lines()
@@ -1195,4 +1216,3 @@ class BusyOverlay(ctk.CTkFrame):
     def set_progress(self, value, message):
         self.message_label.configure(text=message)
         self.progress.set(value)
-

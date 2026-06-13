@@ -180,6 +180,7 @@ Ao criar ou alterar modal interno:
 - use `SaveManagerApp._hide_modal_layer()` para fechar/limpar;
 - nao duplique manualmente overlay, clique fora ou Escape;
 - evite `CTkToplevel` para fluxos internos do launcher.
+- consulte `docs/MODALS.md` antes de mexer em overlay, animacao ou z-order.
 
 Modais que usam essa camada atualmente:
 
@@ -187,7 +188,17 @@ Modais que usam essa camada atualmente:
 - `Criar colecao`;
 - `Mais acoes`.
 
-`Gerenciar jogos` e excecao importante: ele deve ser pre-construido por `_prebuild_game_manager_modal()` quando a UI principal nasce. Ao fechar, autosalve pendencias e esconda o painel com `place_forget()`/`_hide_modal_layer()`, mas nao destrua o widget.
+Estado atual da infraestrutura:
+
+- existe um `modal_layer` unico, filho direto da janela principal;
+- nao existe `ModalRoot` separado com `overlay_dim` e `modal_slot`;
+- `Mais acoes` e `Criar colecao` criam paineis temporarios dentro de `modal_layer`;
+- `Gerenciar jogos` e pre-construido por `_prebuild_game_manager_modal()` quando a UI principal nasce;
+- ao fechar `Gerenciar jogos`, autosalve pendencias e esconda o painel com `place_forget()`/`_hide_modal_layer()`, mas nao destrua o widget;
+- a animacao generica ativa e apenas de abertura, por `app_ui.widgets.animate_modal_open(...)`;
+- nao ha animacao global de fechamento ativa.
+
+O fundo esmaecido de `Gerenciar jogos` e especial: ele usa captura da janela com `ImageGrab` e desenho em `Canvas`. Nao assuma que os demais modais usam o mesmo mecanismo visual.
 
 Ao atualizar listas/cards de jogos:
 

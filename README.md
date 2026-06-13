@@ -82,3 +82,4 @@ O executavel gerado fica em `dist/`. A pasta `build/` contem artefatos intermedi
 - `docs/ARCHITECTURE.md`: mapa dos modulos e fluxo de dados.
 - `docs/DEVELOPMENT.md`: comandos, verificacoes, dependencias e cuidados com DnD/autosave do modal `Gerenciar jogos`.
 - `docs/DATA_FORMATS.md`: formatos dos arquivos JSON e layout dos perfis.
+- `docs/MODALS.md`: estado atual da infraestrutura de modais, overlay, animacao de abertura e pontos de risco.

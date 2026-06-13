@@ -1,5 +1,4 @@
 ﻿import threading
-import os
 import tkinter as tk
 import tkinter.filedialog as filedialog
 import tkinter.messagebox as messagebox
@@ -32,15 +31,15 @@ from app_ui.widgets import (
     GameLibraryCard,
     GameLibraryListItem,
     ProfileCard,
+    animate_modal_close,
     animate_modal_open,
 )
 from core.config_manager import obter_diretorios_jogo
-from core.collections_manager import (
+from core.collection_view_service import (
     CollectionError,
-    create_user_collection,
-    get_user_collection,
-    get_user_collections_file,
-    list_user_collections,
+    create_collection,
+    get_collections_overview,
+    get_open_collection_view,
 )
 from core.game_manager import (
     alternar_favorito_jogo,
@@ -52,7 +51,8 @@ from core.game_manager import (
     obter_launch_config_jogo,
     salvar_jogo,
 )
-from core.launch_manager import LaunchCancelled, LaunchError, has_valid_launch_config, launch_game
+from core.game_context_service import get_game_context_summary, open_game_save_directories
+from core.launch_service import execute_launch_config
 from core.local_auth import (
     AuthError,
     authenticate_local_user,
@@ -66,16 +66,17 @@ from core.runtime_checks import (
     coletar_alertas_pre_troca,
     contar_arquivos_em_diretorios,
 )
-from core.save_manager import (
-    aplicar_perfil,
-    criar_perfil,
-    excluir_perfil,
-    exportar_saves_do_jogo,
-    fazer_backup,
-    limpar_saves_do_jogo,
-    listar_perfis,
-    obter_perfil_ativo,
-    renomear_perfil,
+from core.save_view_service import (
+    activate_save_profile,
+    clear_current_save,
+    create_save_profile,
+    delete_save_profile,
+    export_current_save,
+    get_active_save_profile,
+    get_profile_count,
+    get_save_profiles_view,
+    rename_save_profile,
+    save_active_profile_snapshot,
 )
 from core.settings_manager import (
     definir_tema,
@@ -126,6 +127,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self.game_manager_overlay = None
         self.modal_layer = None
         self._active_modal_close_callback = None
+        self._modal_is_closing = False
         self._persistent_modal_widgets = set()
         self._game_manager_overlay_canvas = None
         self._game_manager_overlay_image = None
@@ -573,6 +575,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
 
         self._clear_modal_layer_content()
         self._active_modal_close_callback = close_callback
+        self._modal_is_closing = False
         self.modal_layer.configure(fg_color=fg_color)
         self.modal_layer.place(x=0, y=0, relwidth=1, relheight=1)
         self.modal_layer.lift()
@@ -595,6 +598,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
             self._clear_modal_layer_content()
             self.modal_layer.place_forget()
         self._active_modal_close_callback = None
+        self._modal_is_closing = False
 
     def _create_internal_modal_panel(
         self,
@@ -662,13 +666,38 @@ class SaveManagerApp(get_dnd_ctk_base()):
         modal.place(x=-10000, y=-10000, anchor="nw")
         modal.update_idletasks()
 
+    def _close_simple_modal_with_animation(self, modal, on_complete=None):
+        if self._modal_is_closing:
+            return False
+
+        self._modal_is_closing = True
+
+        def finish():
+            try:
+                if modal and modal.winfo_exists():
+                    modal.destroy()
+            finally:
+                self._hide_modal_layer()
+                if on_complete:
+                    on_complete()
+
+        if modal and modal.winfo_exists():
+            animate_modal_close(modal, on_complete=finish)
+        else:
+            finish()
+        return True
+
     def _handle_modal_background_click(self, _event=None):
+        if self._modal_is_closing:
+            return "break"
         if self._active_modal_close_callback:
             self._active_modal_close_callback()
             return "break"
         return None
 
     def _handle_modal_escape(self, _event=None):
+        if self._modal_is_closing:
+            return "break"
         if self.modal_layer and self.modal_layer.winfo_ismapped() and self._active_modal_close_callback:
             self._active_modal_close_callback()
             return "break"
@@ -1988,8 +2017,9 @@ class SaveManagerApp(get_dnd_ctk_base()):
         for row, (text, command, fg_color, hover_color, text_color) in enumerate(actions):
             def run_action(callback=command):
                 if modal.winfo_exists():
-                    self._close_more_actions_modal()
-                callback()
+                    self._close_more_actions_modal(on_complete=callback)
+                else:
+                    callback()
 
             button = ctk.CTkButton(
                 actions_frame,
@@ -2016,10 +2046,9 @@ class SaveManagerApp(get_dnd_ctk_base()):
         ).grid(row=2, column=0, sticky="ew", padx=20, pady=(0, 18))
         self._animate_internal_modal_open(modal)
 
-    def _close_more_actions_modal(self):
-        if hasattr(self, "more_actions_modal") and self.more_actions_modal.winfo_exists():
-            self.more_actions_modal.destroy()
-        self._hide_modal_layer()
+    def _close_more_actions_modal(self, on_complete=None):
+        modal = getattr(self, "more_actions_modal", None)
+        self._close_simple_modal_with_animation(modal, on_complete=on_complete)
 
     def _load_selected_profile(self):
         if not self.selected_profile:
@@ -2214,7 +2243,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
             {game.name for game in games},
         )
         for index, game in enumerate(games):
-            profile_count = len(listar_perfis(game.name))
+            profile_count = get_profile_count(game.name)
             signature = self._game_card_signature(game, profile_count)
             card = self._get_reusable_game_card(
                 self.library_cards,
@@ -2256,17 +2285,15 @@ class SaveManagerApp(get_dnd_ctk_base()):
             self._render_open_user_collection()
             return
 
-        collections = list_user_collections()
-        self.library_game_context_label.configure(text="Coleções")
-        self.collection_meta_label.configure(
-            text=f"{len(collections)} coleção(ões)" if collections else "Crie coleções para organizar seus jogos"
-        )
+        collections_view = get_collections_overview()
+        self.library_game_context_label.configure(text=collections_view.title)
+        self.collection_meta_label.configure(text=collections_view.meta_text)
 
-        if not collections:
+        if collections_view.is_empty:
             self._show_collection_empty()
             return
 
-        for index, collection in enumerate(collections):
+        for index, collection in enumerate(collections_view.collections):
             card = self.user_collection_cards.get(collection.id)
             if not card or not card.winfo_exists():
                 card = self._build_user_collection_card(collection)
@@ -2362,14 +2389,14 @@ class SaveManagerApp(get_dnd_ctk_base()):
         return card
 
     def _render_open_user_collection(self):
-        collection = get_user_collection(self.open_collection_id)
-        if not collection:
+        collection_view = get_open_collection_view(self.open_collection_id)
+        if not collection_view:
             self.open_collection_id = ""
             self._refresh_collection_grid()
             return
 
-        self.library_game_context_label.configure(text=collection.name)
-        self.collection_meta_label.configure(text=f"{collection.game_count} jogo(s) nesta coleção")
+        self.library_game_context_label.configure(text=collection_view.name)
+        self.collection_meta_label.configure(text=collection_view.meta_text)
 
         if not self.open_collection_back_row or not self.open_collection_back_row.winfo_exists():
             self.open_collection_back_row = ctk.CTkFrame(self.collection_grid_frame, fg_color="transparent")
@@ -2387,7 +2414,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
             ).grid(row=0, column=0, sticky="w")
         self.open_collection_back_row.grid(row=0, column=0, sticky="ew", padx=8, pady=(4, 10))
 
-        if not collection.game_ids:
+        if collection_view.is_empty:
             if not self.open_collection_empty_label or not self.open_collection_empty_label.winfo_exists():
                 self.open_collection_empty_label = ctk.CTkLabel(
                     self.collection_grid_frame,
@@ -2399,9 +2426,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
             self.open_collection_empty_label.grid(row=1, column=0, sticky="ew", padx=12, pady=18)
             return
 
-        games_by_name = {game.name: game for game in listar_jogos_biblioteca("")}
-        visible_games = [games_by_name.get(game_id) for game_id in collection.game_ids]
-        visible_games = [game for game in visible_games if game]
+        visible_games = collection_view.games
         self._prune_missing_game_cards(
             self.open_collection_game_cards,
             self.open_collection_game_card_signatures,
@@ -2409,7 +2434,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
         )
         row = 1
         for game in visible_games:
-            profile_count = len(listar_perfis(game.name))
+            profile_count = get_profile_count(game.name)
             signature = self._game_card_signature(game, profile_count)
             card = self._get_reusable_game_card(
                 self.open_collection_game_cards,
@@ -2529,9 +2554,8 @@ class SaveManagerApp(get_dnd_ctk_base()):
         )
 
     def _close_create_collection_modal(self):
-        if hasattr(self, "create_collection_modal") and self.create_collection_modal.winfo_exists():
-            self.create_collection_modal.destroy()
-        self._hide_modal_layer()
+        modal = getattr(self, "create_collection_modal", None)
+        self._close_simple_modal_with_animation(modal)
 
     def _focus_create_collection_name(self):
         if not (
@@ -2548,7 +2572,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
     def _create_collection_from_modal(self):
         name = self.create_collection_name_entry.get() if hasattr(self, "create_collection_name_entry") else ""
         try:
-            collection = create_user_collection(name)
+            collection = create_collection(name)
         except CollectionError as exc:
             self.create_collection_error_label.configure(text=str(exc))
             return
@@ -2608,7 +2632,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
 
         self._prune_missing_game_cards(shelf_cards, shelf_signatures, {game.name for game in games})
         for index, game in enumerate(games):
-            profile_count = len(listar_perfis(game.name))
+            profile_count = get_profile_count(game.name)
             signature = self._game_card_signature(game, profile_count)
             card = self._get_reusable_game_card(
                 shelf_cards,
@@ -2810,17 +2834,11 @@ class SaveManagerApp(get_dnd_ctk_base()):
         if not self.current_game:
             return
 
-        opened = 0
-        registrar_recente(self.current_game)
+        result = open_game_save_directories(self.current_game)
         self._refresh_home_shelves_if_visible()
-        for raw_path in obter_diretorios_jogo(self.current_game):
-            path = Path(raw_path)
-            if path.is_dir():
-                os.startfile(path)
-                opened += 1
 
-        if opened:
-            self._set_status(f"{opened} pasta(s) de '{self.current_game}' abertas.", "success")
+        if result.opened_count:
+            self._set_status(f"{result.opened_count} pasta(s) de '{self.current_game}' abertas.", "success")
         else:
             self._set_status("Nenhuma pasta válida para abrir.", "warning")
 
@@ -2884,14 +2902,14 @@ class SaveManagerApp(get_dnd_ctk_base()):
             self.more_actions_button.configure(state="disabled")
             return
 
-        paths = paths if paths is not None else obter_diretorios_jogo(self.current_game)
-        launch_config = obter_launch_config_jogo(self.current_game)
-        can_launch = has_valid_launch_config(launch_config)
-        initials = "".join(part[:1] for part in self.current_game.split()[:2]).upper() or "JG"
+        summary = get_game_context_summary(self.current_game)
+        paths = tuple(paths) if paths is not None else summary.save_paths
+        launch_config = summary.launch_config
+        can_launch = summary.can_launch
         self.game_panel_title.configure(text=self.current_game)
-        self.game_banner_label.configure(text=initials)
-        profile_total = len(listar_perfis(self.current_game))
-        active_profile = obter_perfil_ativo(self.current_game)
+        self.game_banner_label.configure(text=summary.initials)
+        profile_total = summary.profile_total
+        active_profile = summary.active_profile
         self.game_panel_meta.configure(text=f"{profile_total} perfil(is) · {len(paths)} diretório(s)")
         if hasattr(self, "game_context_active_profile"):
             launch_name = Path(launch_config.get("executable_path") or "").name
@@ -2957,8 +2975,9 @@ class SaveManagerApp(get_dnd_ctk_base()):
             self._set_status("Abra um jogo antes de clicar em Jogar.", "info")
             return
 
-        launch_config = obter_launch_config_jogo(self.current_game)
-        if not has_valid_launch_config(launch_config):
+        summary = get_game_context_summary(self.current_game)
+        launch_config = summary.launch_config
+        if not summary.can_launch:
             executable_path = str(launch_config.get("executable_path") or "").strip()
             if executable_path:
                 self._set_status("Arquivo de inicialização não encontrado.", "error")
@@ -2967,15 +2986,12 @@ class SaveManagerApp(get_dnd_ctk_base()):
             self._open_current_game_in_manager()
             return
 
-        try:
-            self._set_status(f"Iniciando '{self.current_game}'...", "info")
-            launch_game(launch_config)
-        except LaunchCancelled as error:
-            self._set_status(str(error), "info")
-        except (LaunchError, ValueError, OSError) as error:
-            self._set_status(str(error), "error")
-        else:
+        self._set_status(f"Iniciando '{self.current_game}'...", "info")
+        result = execute_launch_config(launch_config)
+        if result.success:
             self._set_status(f"'{self.current_game}' iniciado.", "success")
+        else:
+            self._set_status(result.message, result.level)
 
     def _refresh_profiles(self):
         for card in self.profile_cards.values():
@@ -2984,40 +3000,28 @@ class SaveManagerApp(get_dnd_ctk_base()):
         if self.profile_empty_label and self.profile_empty_label.winfo_exists():
             self.profile_empty_label.grid_remove()
 
-        if not self.current_game:
-            self.profile_count_label.configure(text="0 perfis")
-            self._show_profile_empty("Cadastre um jogo para começar a criar perfis.")
-            self._update_selected_profile(None)
+        query = self.profile_search.get() if self.current_game else ""
+        profiles_view = get_save_profiles_view(self.current_game, query, self.selected_profile)
+        self.profile_count_label.configure(text=profiles_view.count_text)
+        self._update_selected_profile(profiles_view.selected_profile)
+
+        if not self.current_game or profiles_view.is_empty:
+            self._show_profile_empty(profiles_view.empty_message)
             self._bind_profile_mousewheel()
             return
 
-        search = self.profile_search.get().strip().lower()
-        profiles = listar_perfis(self.current_game)
-        filtered_profiles = [profile for profile in profiles if search in profile.lower()]
-        active_profile = obter_perfil_ativo(self.current_game)
-        self.profile_count_label.configure(text=f"{len(filtered_profiles)} perfil(is)")
-
-        if self.selected_profile not in profiles:
-            self.selected_profile = active_profile if active_profile in profiles else None
-        self._update_selected_profile(self.selected_profile)
-
-        if not filtered_profiles:
-            self._show_profile_empty("Nenhum perfil encontrado com esse filtro.")
-            self._bind_profile_mousewheel()
-            return
-
-        for index, profile in enumerate(filtered_profiles):
-            card = self.profile_cards.get(profile)
+        for index, profile in enumerate(profiles_view.filtered_profiles):
+            card = self.profile_cards.get(profile.name)
             if not card or not card.winfo_exists():
                 card = ProfileCard(
                     self.profile_list,
-                    profile_name=profile,
-                    active=profile == active_profile,
+                    profile_name=profile.name,
+                    active=profile.active,
                     on_activate=self._activate_profile,
                 )
-                self.profile_cards[profile] = card
+                self.profile_cards[profile.name] = card
             else:
-                card.set_active(profile == active_profile)
+                card.set_active(profile.active)
             card.grid(row=index, column=0, sticky="ew", padx=14, pady=10)
         self._bind_profile_mousewheel()
 
@@ -3098,7 +3102,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self._refresh_quick_actions()
 
     def _refresh_quick_actions(self):
-        active_profile = obter_perfil_ativo(self.current_game) if self.current_game else None
+        active_profile = get_active_save_profile(self.current_game) if self.current_game else None
         can_save_now = bool(active_profile and not self.busy)
         if hasattr(self, "save_profile_button"):
             self.save_profile_button.configure(state="normal" if can_save_now else "disabled")
@@ -3448,7 +3452,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
         if not self.current_game or self.busy:
             return
 
-        active_profile = obter_perfil_ativo(self.current_game)
+        active_profile = get_active_save_profile(self.current_game)
         if profile_name == active_profile:
             self._update_selected_profile(profile_name)
             self._set_status(f"O perfil '{profile_name}' já está ativo.", "info")
@@ -3458,7 +3462,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self._run_operation(
             "Trocando os arquivos de save...",
             f"Perfil '{profile_name}' carregado com sucesso.",
-            lambda progress: aplicar_perfil(self.current_game, profile_name, progress_callback=progress),
+            lambda progress: activate_save_profile(self.current_game, profile_name, progress_callback=progress),
             on_success=lambda _result: self._refresh_profiles(),
         )
 
@@ -3477,7 +3481,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self._run_operation(
             "Criando novo perfil a partir dos saves atuais...",
             f"Perfil '{profile_name}' criado com sucesso.",
-            lambda progress: criar_perfil(self.current_game, profile_name, progress_callback=progress),
+            lambda progress: create_save_profile(self.current_game, profile_name, progress_callback=progress),
             on_success=lambda _result: self._after_profile_saved(profile_name),
         )
 
@@ -3498,7 +3502,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self._run_operation(
             "Renomeando perfil...",
             f"Perfil renomeado para '{new_name}'.",
-            lambda _progress: renomear_perfil(self.current_game, current_name, new_name),
+            lambda _progress: rename_save_profile(self.current_game, current_name, new_name),
             on_success=lambda _result: self._after_profile_saved(new_name),
         )
 
@@ -3522,7 +3526,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self._run_operation(
             "Excluindo perfil...",
             f"Perfil '{profile_name}' excluído com sucesso.",
-            lambda progress: excluir_perfil(self.current_game, profile_name, progress_callback=progress),
+            lambda progress: delete_save_profile(self.current_game, profile_name, progress_callback=progress),
             on_success=lambda _result: self._after_profile_deleted(),
         )
 
@@ -3553,7 +3557,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self._run_operation(
             "Limpando as pastas de save...",
             f"Pastas de save de '{self.current_game}' limpas. Backups do programa preservados.",
-            lambda progress: limpar_saves_do_jogo(self.current_game, progress_callback=progress),
+            lambda progress: clear_current_save(self.current_game, progress_callback=progress),
             on_success=lambda _result: self._refresh_profiles(),
         )
 
@@ -3562,7 +3566,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
             self._set_status("Selecione um jogo antes de salvar o save atual.", "error")
             return
 
-        active_profile = obter_perfil_ativo(self.current_game)
+        active_profile = get_active_save_profile(self.current_game)
         if not active_profile:
             self._set_status("Nenhum perfil ativo para receber o save atual.", "error")
             return
@@ -3581,7 +3585,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self._run_operation(
             "Salvando o save atual no perfil ativo...",
             f"Save atual salvo no perfil '{active_profile}'.",
-            lambda progress: fazer_backup(self.current_game, active_profile, progress_callback=progress),
+            lambda progress: save_active_profile_snapshot(self.current_game, progress_callback=progress),
             on_success=lambda _result: self._refresh_profiles(),
         )
 
@@ -3601,7 +3605,7 @@ class SaveManagerApp(get_dnd_ctk_base()):
         self._run_operation(
             "Exportando o save atual...",
             "Save atual exportado com sucesso.",
-            lambda progress: exportar_saves_do_jogo(
+            lambda progress: export_current_save(
                 self.current_game,
                 destination_folder,
                 progress_callback=progress,
